@@ -1,0 +1,420 @@
+/* ======= Santander look & feel ======= */
+:root{
+  --brand:#b30000;
+  --ink:#333;
+  --muted:#68707a;
+  --card:#fff;
+  --line:#e9e9e9;
+  --pill:#f3f3f3;
+
+  --ok:#1f9d41;
+  --warn:#d17b00;
+  --bad:#d13438;
+  --info:#5b6770;
+
+  --tab-underline: 3px;
+  --tab-gap: 24px;
+}
+
+.app-wrapper{
+  display:grid;
+  gap:16px;
+  font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  color:var(--ink);
+  font-size:14px;
+}
+
+/* Tarjetas/secciones */
+.card{
+  background:var(--card);
+  border-radius:8px;
+  padding:16px;
+  box-shadow:0 2px 6px rgba(0,0,0,.06);
+}
+
+/* Encabezados con barra roja a la izquierda */
+.section-header{
+  font-weight:700;
+  font-size:17px;
+  color:#6f7a82;
+  margin:0 0 12px;
+  padding-left:5px;
+  border-left:4px solid var(--brand);
+  text-align:left;
+}
+
+/* === Header “Información general” con grilla e íconos === */
+.gen-grid{
+  display:grid;
+  grid-template-columns: 420px 1fr 1fr 1fr;
+  grid-auto-rows:minmax(40px,auto);
+  column-gap:24px;
+  row-gap:15px;
+  align-items:start;
+}
+
+/* Usuario */
+.user-block{
+  grid-row:1 / span 2;
+  grid-column:1;
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+  align-self:center;
+  padding-left:48px;
+}
+.user-text .name{ font-weight:700; font-size:18px; margin-bottom:4px; text-align:left; }
+.user-text .muted{ color:var(--muted); text-align:left; }
+
+/* Íconos */
+.ico{ width:48px; height:48px; display:inline-block; border-radius:4px; }
+
+/* Ítems comunes */
+.item{ display:flex; align-items:center; gap:10px; justify-self:start; text-align:left; }
+.item-text{ display:flex; flex-direction:column; }
+.item-text .muted{ color:var(--muted); line-height:1; }
+.item-text .strong{ font-weight:700; line-height:1.2; margin-top:5px; }
+.green-dot{ color:var(--ok); font-weight:700; }
+.red-dot{ color:var(--bad); font-weight:700; }
+
+/* Ubicación automática por posición */
+.gen-grid > .item:nth-of-type(2),
+.gen-grid > .item:nth-of-type(3),
+.gen-grid > .item:nth-of-type(4){ grid-row:1; }
+.gen-grid > .item:nth-of-type(5),
+.gen-grid > .item:nth-of-type(6),
+.gen-grid > .item:nth-of-type(7){ grid-row:2; }
+.gen-grid > .item:nth-of-type(2),
+.gen-grid > .item:nth-of-type(5){ grid-column:2; }
+.gen-grid > .item:nth-of-type(3),
+.gen-grid > .item:nth-of-type(6){ grid-column:3; }
+.gen-grid > .item:nth-of-type(4),
+.gen-grid > .item:nth-of-type(7){ grid-column:4; }
+
+/* =========================
+   Tabs estilo Fluent
+   ========================= */
+.fluent-tabs{
+  display:flex;
+  gap: var(--tab-gap);
+  flex-wrap: nowrap;
+  align-items:center;
+  margin: 8px 0 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 44px;
+  -webkit-overflow-scrolling: touch;
+}
+.fluent-tabs::-webkit-scrollbar{ height: 8px; width: 0; background: transparent; }
+.fluent-tabs::-webkit-scrollbar-thumb{ background: rgba(0,0,0,.15); border-radius:999px; }
+.fluent-tabs{ scrollbar-width: thin; }
+
+.fluent-tabs.transparent{
+  border-bottom: 1px solid #e9ecef;
+  padding-bottom: 8px;
+}
+.fluent-tabs.transparent .fluent-tab{
+  background: transparent;
+  border: 0;
+  padding: 10px 6px;
+  border-radius: 0;
+  color: #5b6770;
+  font-weight: 600;
+  position: relative;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+  font-size: 16px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+.fluent-tabs.transparent .fluent-tab:hover{ color:#2f3941; }
+.fluent-tabs.transparent .fluent-tab.active{ color:#000; }
+.fluent-tabs.transparent .fluent-tab.active::after{
+  content:"";
+  position:absolute; left:0; right:0; bottom:-7px;
+  height: var(--tab-underline);
+  border-radius: var(--tab-underline);
+  background: var(--brand);
+}
+
+#categoriaProductos{ font-size: 18px; }
+#tiposProductos{ font-size: 15px; }
+
+/* ===== Chips de categoría ===== */
+.cat-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  font-weight:700; font-size:12px;
+  padding:4px 8px; border-radius:999px;
+  background:var(--pill); color:#2f3941;
+  border:1px solid #e6e6e6;
+}
+.cat-credit{ border-color:#e6c0c0; background:#fff2f2; }
+.cat-debit{ border-color:#cfe4d5; background:#effaf2; }
+.cat-cuentas{ border-color:#d7def0; background:#f5f8ff; }
+.cat-creditos{ border-color:#f1e0c5; background:#fff8ec; }
+.cat-inversiones{ border-color:#d6ebe9; background:#f1fbfa; }
+.cat-otros{ border-color:#e3e3e3; background:#fafafa; }
+
+/* ===== Datos del producto ===== */
+.product-data{ display:grid; gap:16px; margin-top:12px; }
+.product-grid{
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  column-gap:48px;
+  row-gap:16px;
+  --grid-gap: 48px;
+  margin-left: 70px;
+  align-items:start;
+  justify-items:start;
+}
+.field{ display:flex; flex-direction:column; align-items:flex-start; text-align:left; }
+.field-label{ color:var(--muted); line-height:1; font-weight:400; text-align:left; }
+.field-value{ font-weight:700; line-height:1.2; margin-top:5px; text-align:left; }
+
+/* Logo de marca */
+.brand-ico-lg{ width:33px; height:33px; display:inline-block; margin-right:8px; object-fit:contain; vertical-align:middle; }
+.flex-type-with-icon, .flex-brand-with-icon{ display:flex; align-items:center; gap:8px; line-height:normal; }
+
+/* ===== Pills de estatus ===== */
+.status-pill{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 8px; border-radius:999px;
+  font-weight:700; font-size:12px;
+  background:var(--pill); color:#2f3941;
+  border:1px solid #e6e6e6;
+}
+.status-active{ color:var(--ok); border-color:#cfe4d5; background:#effaf2; }
+.status-blocked{ color:var(--bad); border-color:#f0c9c9; background:#fff3f3; }
+.status-expired{ color:var(--warn); border-color:#f1d7ae; background:#fff7e9; }
+.status-inactive{ color:#606a70; border-color:#e3e3e3; background:#fafafa; }
+
+/* Preguntas (P1/P2 de producto) */
+.question-label{
+  grid-column: 1;
+  color: var(--muted);
+  font-weight: 600;
+  align-self: start;
+  margin-top: 30px;
+}
+.question-value{
+  grid-column: 2 / 4;
+  align-self: start;
+  margin-left: 10px;
+  margin-top: 22px;
+}
+
+#cbPregunta{
+  height:34px;
+  border:1px solid #d6d6d6;
+  border-radius:6px;
+  background:#f5f5f5;
+  padding:0 10px;
+  width:100%;
+  max-width:560px;
+  outline:none;
+}
+#cbPregunta:focus{
+  border-color:#b8b8b8;
+  box-shadow:0 0 0 2px rgba(0,0,0,.05) inset;
+}
+fluent-combobox::part(control){
+  background:#f5f5f5;
+  border:1px solid #d6d6d6;
+  border-radius:6px;
+  min-height:34px;
+  width: 500px;
+}
+
+/* === NUEVO: fila para P1/P2 Movimiento con mismo layout que preguntas === */
+.mov-extra-row{
+  display:grid;
+  grid-template-columns: 220px minmax(0,1fr);
+  column-gap:10px;
+  align-items:center;
+  margin-top:10px;
+}
+
+/* Ajustar márgenes de los labels/values dentro de mov-extra-row */
+.mov-extra-row .question-label{
+  grid-column:auto;
+  margin-top:0;
+}
+.mov-extra-row .question-value{
+  grid-column:auto;
+  margin-top:0;
+  margin-left:0;
+}
+
+/* === NUEVO: combos P1Movimiento / P2Movimiento, look igual a cbPregunta === */
+#mov-p1-select,
+#mov-p2-select{
+  height:34px;
+  border:1px solid #d6d6d6;
+  border-radius:6px;
+  background:#f5f5f5;
+  padding:0 10px;
+  width:100%;
+  max-width:560px;
+  outline:none;
+}
+#mov-p1-select:focus,
+#mov-p2-select:focus{
+  border-color:#b8b8b8;
+  box-shadow:0 0 0 2px rgba(0,0,0,.05) inset;
+}
+
+/* ===== Sección de acciones de contrato ===== */
+.contrato-actions{
+  display:flex;
+  justify-content:flex-end;
+  margin: 6px 0 4px;
+}
+
+/* Botones */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  border:1px solid transparent;
+  border-radius:8px;
+  font-weight:600;
+  padding:8px 12px;
+  cursor:pointer;
+}
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+.btn-primary{ background: var(--brand); color:#fff; }
+
+/* Utilidades */
+.hidden{ display:none !important; }
+.b{-webkit-font-smoothing:antialiased; font-weight:700;}
+
+/* Skeleton loader */
+.skel{
+  position:relative;
+  overflow:hidden;
+  background: linear-gradient(90deg, #f2f2f2, #fafafa, #f2f2f2);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite linear;
+  border-radius:6px;
+  min-height:18px;
+}
+@keyframes shimmer{
+  0%{ background-position: 200% 0; }
+  100%{ background-position: -200% 0; }
+}
+
+/* ===== Responsivo ===== */
+@media (max-width: 1200px){
+  .gen-grid{ grid-template-columns: 1fr 1fr; }
+  .user-block{ grid-column:1 / -1; padding-left:0; }
+  .gen-grid > .item{ grid-column:auto !important; }
+  .product-grid{
+    grid-template-columns: repeat(2, 1fr);
+    margin-left: 0;
+    column-gap:24px;
+  }
+  fluent-combobox::part(control){ width:100%; }
+}
+@media (max-width: 640px){
+  .product-grid{ grid-template-columns: 1fr; }
+}
+
+/* =========================================================
+   Tabla avanzada de movimientos (Fluent web look)
+   ========================================================= */
+.mov-container { margin-top: 18px; }
+
+.mov-toolbar,
+.mov-toolbar-bottom {
+  display: flex; align-items: center;
+  gap: 12px; padding: 10px 12px; background: #fff; border: 1px solid #edf0f2;
+  border-radius: 10px; box-shadow: 0 1px 1px rgba(0,0,0,.02);
+  margin: 8px 0;
+}
+
+.mov-toolbar { justify-content: space-between; }
+
+/* >>> Paginación inferior a la DERECHA completamente */
+.mov-toolbar-bottom { justify-content: flex-end; }
+
+.mov-toolbar-right { display: flex; align-items: center; gap: 10px; }
+.mov-pagesize-label { font-size: 12px; color: #5a6068; }
+
+/* Inputs compactos (filtros & page size) */
+.mov-select, .mov-input {
+  border: 1px solid #dbe1e6;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  outline: none;
+  background: #fff;
+  min-width: 120px;
+}
+.mov-input:focus, .mov-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(179,0,0,0.12);
+}
+
+.mov-search .mov-input { min-width: 280px; }
+
+/* ====== Filtros (2 filas, 5 por fila) ====== */
+.mov-filters { display: grid; gap: 10px; margin: 10px 0; }
+.mov-filters-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.mov-filter-range { display: flex; align-items: center; gap: 8px; }
+.mov-filter-range label { font-size: 12px; color: #5a6068; min-width: 84px; }
+
+/* Tabla */
+.mov-table-wrapper {
+  border: 1px solid #edf0f2; border-radius: 12px; overflow: hidden; background:#fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.03);
+}
+.mov-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.mov-table thead th {
+  text-align: left; font-weight: 600; font-size: 13px; color: #3a4048;
+  background: #fafbfc; border-bottom: 1px solid #edf0f2; padding: 10px 12px;
+}
+.mov-table tbody td {
+  padding: 10px 12px; border-bottom: 1px solid #f3f5f7; font-size: 13px; vertical-align: middle;
+}
+.mov-table tbody tr:hover { background: #fcfcfd; }
+.mov-table .sel-col { width: 44px; text-align: center; }
+
+/* Columna de Duplicado — badge sin ícono */
+.dup-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:3px 8px; border-radius:999px; font-size:12px; font-weight:700;
+  border:1px solid #e6e6e6; background:#fafafa; color:#2f3941;
+}
+.dup-yes{ color:var(--ok); border-color:#cfe4d5; background:#effaf2; }
+.dup-no{ color:#606a70; }
+
+.row-selected { background: rgba(179,0,0,0.06); outline: 1px solid rgba(179,0,0,0.16); }
+
+.mov-pagination { display: flex; align-items: center; gap: 8px; }
+.mov-page-btn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid #dbe1e6; background:#fff; cursor: pointer;
+}
+.mov-page-btn:hover { border-color: var(--brand); }
+.mov-page-status { font-size: 12px; color: #5a6068; min-width: 110px; text-align: center; }
+
+/* Ajustes de Fluent checkbox dentro de la tabla (alineación) */
+.mov-row-checkbox fluent-checkbox::part(control) { margin: 0; }
+#mov-select-all::part(control) { margin: 0; }
+
+/* Responsive filtros, toolbar y paginación */
+@media (max-width: 980px) {
+  .mov-filters-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mov-search .mov-input { min-width: 0; width: 100%; }
+  .mov-toolbar { flex-direction: column; align-items: stretch; }
+  .mov-toolbar-bottom { flex-direction: column; align-items: stretch; }
+  .mov-toolbar-right { justify-content: space-between; }
+}
+@media (max-width: 560px) {
+  .mov-filters-row { grid-template-columns: 1fr; }
+}
+
+/* ===== (Opcional) ocultar texto “guardando caso” si existe dentro de un contenedor con esta clase ===== */
+.progress-no-text .progress-text{ display:none !important; }

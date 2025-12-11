@@ -1,0 +1,51 @@
+jobs:
+  build-and-deploy:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        control:
+          - BotoneraCasoPCF
+          - PCFSantander
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./controls/${{ matrix.control }}
+
+      - name: Build PCF
+        run: npm run build
+        working-directory: ./controls/${{ matrix.control }}
+
+      - name: Install Power Platform Tools (PAC CLI)
+        uses: microsoft/powerplatform-actions/actions-install@v1
+
+      - name: Auth and Push PCF
+        shell: pwsh
+        env:
+          PP_ENVIRONMENT_URL:  ${{ secrets.PP_ENV_URL }}
+          PP_TENANT_ID:        ${{ secrets.PP_TENANT_ID }}
+          PP_CLIENT_ID:        ${{ secrets.PP_CLIENT_ID }}
+          PP_CLIENT_SECRET:    ${{ secrets.PP_CLIENT_SECRET }}
+        run: |
+          $pac = $env:POWERPLATFORMTOOLS_PACPATH
+
+          & $pac auth clear
+          & $pac auth create `
+            --url $env:PP_ENVIRONMENT_URL `
+            --tenant $env:PP_TENANT_ID `
+            --applicationId $env:PP_CLIENT_ID `
+            --clientSecret $env:PP_CLIENT_SECRET
+
+          # Cada iteración del matrix hace push del control de esa carpeta
+          & $pac pcf push `
+            --solution-unique-name solucion_test `
+            --control-folder "./controls/${{ matrix.control }}"

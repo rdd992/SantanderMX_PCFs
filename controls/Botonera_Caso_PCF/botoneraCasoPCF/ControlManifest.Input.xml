@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest>
+  <control namespace="botoneraCasoPCF" constructor="botoneraCasoPCF" version="0.0.1" display-name-key="botoneraCasoPCF" description-key="botoneraCasoPCF description" control-type="standard">
+    <external-service-usage enabled="false"></external-service-usage>
+
+    <property name="sampleProperty" display-name-key="Property_Display_Key" description-key="Property_Desc_Key" of-type="SingleLine.Text" usage="bound" required="false"/>
+
+    <resources>
+      <code path="index.ts" order="1"/>
+      <css path="styles.css" order="2"/>
+    </resources>
+
+    <feature-usage>
+      <uses-feature name="WebAPI" required="true"/>
+      <uses-feature name="Utility" required="false"/>
+    </feature-usage>
+  </control>
+</manifest>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<manifest>
+  <control namespace="SampleNameSpace"
+           constructor="CaseEmbedded"
+           version="1.0.2"
+           display-name-key="SampleComponent"
+           description-key="SampleComponent description"
+           control-type="standard"
+           api-version="1.3.18">
+
+    <external-service-usage enabled="true">
+      <domain>*.logic.azure.com</domain>
+      <domain>*.azurewebsites.net</domain>
+      <domain>*.powerplatform.com</domain>
+    </external-service-usage>
+
+    <!-- Propiedades base -->
+    <property name="recordId" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="RecordId_Display" description-key="RecordId_Desc" />
+
+    <property name="autostart" of-type="TwoOptions" usage="input" required="false"
+              display-name-key="Autostart_Display" description-key="Autostart_Desc" />
+
+    <!-- Se usa como bucId -->
+    <property name="initialNombre" of-type="SingleLine.Text" usage="input" required="false"
+              display-name-key="InitialNombre_Display" description-key="InitialNombre_Desc" />
+
+    <property name="initialProducto" of-type="SingleLine.Text" usage="input" required="false"
+              display-name-key="InitialProducto_Display" description-key="InitialProducto_Desc" />
+
+    <!-- EXISTENTES -->
+    <property name="outMiddleName" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutMiddleName_Display" description-key="OutMiddleName_Desc" />
+
+    <property name="jsonPersona" of-type="Multiple" usage="bound" required="false"
+              display-name-key="JsonPersona_Display" description-key="JsonPersona_Desc" />
+
+    <!-- NUEVOS TEXTOS -->
+    <property name="outLastName" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutLastName_Display" description-key="OutLastName_Desc" />
+    <property name="outFirstName" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutFirstName_Display" description-key="OutFirstName_Desc" />
+    <property name="outEjecutivoTitular" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutEjecutivoTitular_Display" description-key="OutEjecutivoTitular_Desc" />
+    <property name="outAntiguedad" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutAntiguedad_Display" description-key="OutAntiguedad_Desc" />
+    <property name="outEmail" of-type="SingleLine.Email" usage="bound" required="false"
+              display-name-key="OutEmail_Display" description-key="OutEmail_Desc" />
+    <property name="outMobile" of-type="SingleLine.Phone" usage="bound" required="false"
+              display-name-key="OutMobile_Display" description-key="OutMobile_Desc" />
+
+    <!-- NUEVOS BOOLEANS -->
+    <property name="outUsuarioBancaElectronica" of-type="TwoOptions" usage="bound" required="false"
+              display-name-key="OutUsuarioBancaElectronica_Display" description-key="OutUsuarioBancaElectronica_Desc" />
+    <property name="outTenenciaProductos" of-type="TwoOptions" usage="bound" required="false"
+              display-name-key="OutTenenciaProductos_Display" description-key="OutTenenciaProductos_Desc" />
+
+    <!-- NUEVOS PICKLISTS -->
+    <property name="outGenderCode" of-type="OptionSet" usage="bound" required="false"
+              display-name-key="OutGenderCode_Display" description-key="OutGenderCode_Desc" />
+    <property name="outMarcaDeVulnerabilidad" of-type="OptionSet" usage="bound" required="false"
+              display-name-key="OutMarcaDeVulnerabilidad_Display" description-key="OutMarcaDeVulnerabilidad_Desc" />
+
+    <!-- NUEVOS LOOKUPS -->
+    <property name="outSegmento" of-type="Lookup.Simple" usage="bound" required="false"
+              display-name-key="OutSegmento_Display" description-key="OutSegmento_Desc" />
+    <property name="outSucursal" of-type="Lookup.Simple" usage="bound" required="false"
+              display-name-key="OutSucursal_Display" description-key="OutSucursal_Desc" />
+    <property name="outSucursalAlta" of-type="Lookup.Simple" usage="bound" required="false"
+              display-name-key="OutSucursalAlta_Display" description-key="OutSucursalAlta_Desc" />
+
+    <!-- CUSTOMER (account/contact) -->
+    <property name="customerid" of-type="Lookup.Customer" usage="bound" required="false"
+              display-name-key="CustomerId_Display" description-key="CustomerId_Desc" />
+
+    <resources>
+      <code path="index.ts" order="1" />
+      <css path="styles.css" order="2" />
+    </resources>
+
+    <feature-usage>
+      <uses-feature name="WebAPI" required="true" />
+      <uses-feature name="Utility" required="true" />
+    </feature-usage>
+  </control>
+</manifest>
