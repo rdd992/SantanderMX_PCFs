@@ -1,3 +1,10 @@
+name: CI/CD - PCF Multi Control
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   build-and-deploy:
     runs-on: windows-latest
@@ -30,6 +37,7 @@ jobs:
 
       - name: Auth and Push PCF
         shell: pwsh
+        working-directory: ./controls/${{ matrix.control }}
         env:
           PP_ENVIRONMENT_URL:  ${{ secrets.PP_ENV_URL }}
           PP_TENANT_ID:        ${{ secrets.PP_TENANT_ID }}
@@ -37,15 +45,17 @@ jobs:
           PP_CLIENT_SECRET:    ${{ secrets.PP_CLIENT_SECRET }}
         run: |
           $pac = $env:POWERPLATFORMTOOLS_PACPATH
+          Write-Host "Using PAC at: $pac"
+          Write-Host "Control folder: $(Get-Location)"
 
           & $pac auth clear
+
           & $pac auth create `
             --url $env:PP_ENVIRONMENT_URL `
             --tenant $env:PP_TENANT_ID `
             --applicationId $env:PP_CLIENT_ID `
             --clientSecret $env:PP_CLIENT_SECRET
 
-          # Cada iteración del matrix hace push del control de esa carpeta
+          # Desde esta carpeta, pac detecta el PCF de ese control
           & $pac pcf push `
-            --solution-unique-name solucion_test `
-            --control-folder "./controls/${{ matrix.control }}"
+            --solution-unique-name solucion_test
