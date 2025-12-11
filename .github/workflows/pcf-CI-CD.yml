@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         control:
-          - BotoneraCasoPCF
+          - Botonera_Caso_PCF
           - PCFSantander
 
     steps:
