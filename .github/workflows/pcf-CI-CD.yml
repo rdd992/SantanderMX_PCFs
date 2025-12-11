@@ -59,4 +59,4 @@ jobs:
 
           # Desde esta carpeta, pac detecta el PCF de ese control
           & $pac pcf push `
-            --solution-unique-name solucion_test
+            --solution-unique-name Santander_PCF
