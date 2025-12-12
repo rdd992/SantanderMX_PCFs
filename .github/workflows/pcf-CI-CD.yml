@@ -55,7 +55,7 @@ jobs:
       # INSTALL PAC CLI
       # ==========================================
       - name: Install Power Platform Tools (PAC CLI)
-        uses: microsoft/powerplatform-actions/actions-install@v1
+        uses: microsoft/powerplatform-actions/actions-install@v1.5.1
 
       # ==========================================
       # DEPLOY DEL PCF
