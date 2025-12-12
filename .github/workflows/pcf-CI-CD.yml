@@ -52,10 +52,13 @@ jobs:
         working-directory: ./controls/${{ matrix.control }}
 
       # ==========================================
-      # INSTALL PAC CLI
+      # INSTALL PAC CLI (Opción A: winget)
       # ==========================================
-      - name: Install Power Platform Tools (PAC CLI)
-        uses: microsoft/powerplatform-actions/actions-install@v1.5.1
+      - name: Install Power Platform CLI (PAC)
+        shell: pwsh
+        run: |
+          winget install Microsoft.PowerAppsCLI --accept-source-agreements --accept-package-agreements
+          pac --version
 
       # ==========================================
       # DEPLOY DEL PCF
@@ -69,18 +72,17 @@ jobs:
           PP_CLIENT_ID:        ${{ secrets.PP_CLIENT_ID }}
           PP_CLIENT_SECRET:    ${{ secrets.PP_CLIENT_SECRET }}
         run: |
-          $pac = $env:POWERPLATFORMTOOLS_PACPATH
-          Write-Host "Using PAC at: $pac"
           Write-Host "Control folder: $(Get-Location)"
+          pac --version
 
-          & $pac auth clear
+          pac auth clear
 
-          & $pac auth create `
+          pac auth create `
             --url $env:PP_ENVIRONMENT_URL `
             --tenant $env:PP_TENANT_ID `
             --applicationId $env:PP_CLIENT_ID `
             --clientSecret $env:PP_CLIENT_SECRET
 
           # Publica el control dentro de la solución destino
-          & $pac pcf push `
+          pac pcf push `
             --solution-unique-name Santander_PCF
