@@ -58,6 +58,26 @@ jobs:
         shell: pwsh
         run: |
           winget install Microsoft.PowerAppsCLI --accept-source-agreements --accept-package-agreements
+
+          # Buscar pac.exe
+          $pacPath = Get-ChildItem `
+            -Path "C:\Program Files","C:\Users\runneradmin\AppData\Local" `
+            -Recurse `
+            -Filter pac.exe `
+            -ErrorAction SilentlyContinue `
+            | Select-Object -First 1
+
+          if (-not $pacPath) {
+            Write-Error "pac.exe no encontrado después de instalar PowerAppsCLI"
+            exit 1
+          }
+
+          Write-Host "PAC encontrado en: $($pacPath.Directory.FullName)"
+
+          # Agregar al PATH del job
+          echo $pacPath.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          # Validar
           pac --version
 
       # ==========================================
