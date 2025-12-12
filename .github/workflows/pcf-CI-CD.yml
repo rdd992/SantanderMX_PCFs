@@ -38,7 +38,7 @@ jobs:
             ${{ runner.os }}-node-
 
       # ==========================================
-      # INSTALL DEPENDENCIES (rápido gracias al cache)
+      # INSTALL DEPENDENCIES
       # ==========================================
       - name: Install dependencies
         run: npm install
@@ -52,33 +52,30 @@ jobs:
         working-directory: ./controls/${{ matrix.control }}
 
       # ==========================================
-      # INSTALL PAC CLI (Opción A: winget)
+      # INSTALL PAC CLI (winget) - OPTIMIZADO
       # ==========================================
       - name: Install Power Platform CLI (PAC)
         shell: pwsh
         run: |
           winget install Microsoft.PowerAppsCLI --accept-source-agreements --accept-package-agreements
 
-          # Buscar pac.exe
-          $pacPath = Get-ChildItem `
-            -Path "C:\Program Files","C:\Users\runneradmin\AppData\Local" `
-            -Recurse `
-            -Filter pac.exe `
-            -ErrorAction SilentlyContinue `
-            | Select-Object -First 1
+          $pacRoot = "C:\Users\runneradmin\AppData\Local\Microsoft\PowerAppsCli"
+          $pacDir = Get-ChildItem "$pacRoot\Microsoft.PowerApps.CLI.*\tools" -Directory -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
 
-          if (-not $pacPath) {
-            Write-Error "pac.exe no encontrado después de instalar PowerAppsCLI"
+          if (-not $pacDir) {
+            Write-Error "No se encontró la carpeta de PAC en $pacRoot"
             exit 1
           }
 
-          Write-Host "PAC encontrado en: $($pacPath.Directory.FullName)"
+          Write-Host "PAC encontrado en: $($pacDir.FullName)"
 
-          # Agregar al PATH del job
-          echo $pacPath.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Agregar al PATH para los siguientes steps
+          $pacDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-          # Validar
-          pac --version
+          # Validación inmediata (en este step) sin depender del PATH
+          & "$($pacDir.FullName)\pac.exe" --version
 
       # ==========================================
       # DEPLOY DEL PCF
@@ -103,6 +100,5 @@ jobs:
             --applicationId $env:PP_CLIENT_ID `
             --clientSecret $env:PP_CLIENT_SECRET
 
-          # Publica el control dentro de la solución destino
           pac pcf push `
             --solution-unique-name Santander_PCF
