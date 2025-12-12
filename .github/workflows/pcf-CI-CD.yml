@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
 
     strategy:
-      max-parallel: 1
+      max-parallel: 1  # Evita que dos pac pcf push se ejecuten al mismo tiempo
       matrix:
         control:
           - Botonera_Caso_PCF
@@ -25,17 +25,41 @@ jobs:
         with:
           node-version: '20'
 
+      # ==========================================
+      # CACHE: node_modules por cada control del matrix
+      # ==========================================
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: ./controls/${{ matrix.control }}/node_modules
+          key: ${{ runner.os }}-node-${{ matrix.control }}-${{ hashFiles('./controls/${{ matrix.control }}/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ matrix.control }}-
+            ${{ runner.os }}-node-
+
+      # ==========================================
+      # INSTALL DEPENDENCIES (rápido gracias al cache)
+      # ==========================================
       - name: Install dependencies
         run: npm install
         working-directory: ./controls/${{ matrix.control }}
 
+      # ==========================================
+      # BUILD DEL PCF
+      # ==========================================
       - name: Build PCF
         run: npm run build
         working-directory: ./controls/${{ matrix.control }}
 
+      # ==========================================
+      # INSTALL PAC CLI
+      # ==========================================
       - name: Install Power Platform Tools (PAC CLI)
         uses: microsoft/powerplatform-actions/actions-install@v1
 
+      # ==========================================
+      # DEPLOY DEL PCF
+      # ==========================================
       - name: Auth and Push PCF
         shell: pwsh
         working-directory: ./controls/${{ matrix.control }}
@@ -57,6 +81,6 @@ jobs:
             --applicationId $env:PP_CLIENT_ID `
             --clientSecret $env:PP_CLIENT_SECRET
 
-          # Desde esta carpeta, pac detecta el PCF de ese control
+          # Publica el control dentro de la solución destino
           & $pac pcf push `
             --solution-unique-name Santander_PCF
