@@ -8,10 +8,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# No es obligatorio ignorar package-lock.json,
-# pero en PCF evita conflictos entre Node 18/20.
-package-lock.json
-
 # ===========================
 #  PowerApps Component Framework (PCF)
 # ===========================
@@ -58,17 +54,16 @@ obj/
 Thumbs.db
 
 # ===========================
-#  GitHub Actions cache
+#  GitHub Actions cache (si existiera)
 # ===========================
 .github/workflows/*.cache
 
 # ===========================
-#  MONOREPO (si agregas más PCF)
+#  MONOREPO (PCF)
 # ===========================
 controls/*/node_modules/
 controls/*/out/
 controls/*/bin/
 controls/*/obj/
 controls/*/*.tsbuildinfo
-controls/*/package-lock.json
 controls/*/PowerAppsToolsTemp_*/
