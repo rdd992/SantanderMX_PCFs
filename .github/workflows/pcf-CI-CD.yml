@@ -50,14 +50,31 @@ jobs:
         run: npm run build
         working-directory: ./controls/${{ matrix.control }}
 
+           # ==========================================
+      # INSTALL PAC CLI (SIMPLE y ESTABLE: dotnet tool)
       # ==========================================
-      # INSTALL PAC (FORMA SIMPLE Y ROBUSTA)
-      # ==========================================
-      - name: Install Power Platform CLI (PAC)
+      - name: Install Power Platform CLI (PAC) via dotnet tool
         shell: pwsh
         run: |
-          npm install -g @microsoft/powerplatform-cli
-          pac --version
+          dotnet --info
+
+          # Instala (o actualiza si ya existe)
+          dotnet tool update --global Microsoft.PowerApps.CLI.Tool `
+            || dotnet tool install --global Microsoft.PowerApps.CLI.Tool
+
+          $pacDir = Join-Path $env:USERPROFILE ".dotnet\tools"
+          $pacExe = Join-Path $pacDir "pac.exe"
+
+          if (-not (Test-Path $pacExe)) {
+            Write-Error "No se encontró pac.exe en $pacExe"
+            exit 1
+          }
+
+          # Agregar al PATH para los siguientes steps
+          $pacDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          # Validar en ESTE step sin depender del PATH
+          & $pacExe --version
 
       # ==========================================
       # DEPLOY PCF
