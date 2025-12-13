@@ -25,9 +25,6 @@ jobs:
         with:
           node-version: '20'
 
-      # ==========================================
-      # CACHE: node_modules por control
-      # ==========================================
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
@@ -36,36 +33,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ matrix.control }}-
 
-      # ==========================================
-      # INSTALL DEPENDENCIES
-      # ==========================================
       - name: Install dependencies
         run: npm install
         working-directory: ./controls/${{ matrix.control }}
 
-      # ==========================================
-      # BUILD PCF
-      # ==========================================
       - name: Build PCF
         run: npm run build
         working-directory: ./controls/${{ matrix.control }}
 
-           # ==========================================
-      # INSTALL PAC CLI (SIMPLE y ESTABLE: dotnet tool)
-      # ==========================================
+      # PAC vía dotnet tool (estable)
       - name: Install Power Platform CLI (PAC) via dotnet tool
         shell: pwsh
         run: |
           dotnet tool update --global Microsoft.PowerApps.CLI.Tool `
-          || dotnet tool install --global Microsoft.PowerApps.CLI.Tool
+            || dotnet tool install --global Microsoft.PowerApps.CLI.Tool
 
           $pacDir = Join-Path $env:USERPROFILE ".dotnet\tools"
           $pacDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          pac version
 
-      # ==========================================
-      # DEPLOY PCF
-      # ==========================================
+          pac help
+          pac pcf help
+
       - name: Auth and Push PCF
         shell: pwsh
         working-directory: ./controls/${{ matrix.control }}
@@ -75,6 +63,8 @@ jobs:
           PP_CLIENT_ID:        ${{ secrets.PP_CLIENT_ID }}
           PP_CLIENT_SECRET:    ${{ secrets.PP_CLIENT_SECRET }}
         run: |
+          pac pcf help
+
           pac auth clear
 
           pac auth create `
