@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-latest
 
     strategy:
-      max-parallel: 1  # Evita que dos pac pcf push se ejecuten al mismo tiempo
+      max-parallel: 1
       matrix:
         control:
           - Botonera_Caso_PCF
@@ -26,7 +26,7 @@ jobs:
           node-version: '20'
 
       # ==========================================
-      # CACHE: node_modules por cada control del matrix
+      # CACHE: node_modules por control
       # ==========================================
       - name: Cache node_modules
         uses: actions/cache@v4
@@ -35,7 +35,6 @@ jobs:
           key: ${{ runner.os }}-node-${{ matrix.control }}-${{ hashFiles('./controls/${{ matrix.control }}/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-${{ matrix.control }}-
-            ${{ runner.os }}-node-
 
       # ==========================================
       # INSTALL DEPENDENCIES
@@ -45,40 +44,23 @@ jobs:
         working-directory: ./controls/${{ matrix.control }}
 
       # ==========================================
-      # BUILD DEL PCF
+      # BUILD PCF
       # ==========================================
       - name: Build PCF
         run: npm run build
         working-directory: ./controls/${{ matrix.control }}
 
       # ==========================================
-      # INSTALL PAC CLI (winget) - OPTIMIZADO
+      # INSTALL PAC (FORMA SIMPLE Y ROBUSTA)
       # ==========================================
       - name: Install Power Platform CLI (PAC)
         shell: pwsh
         run: |
-          winget install Microsoft.PowerAppsCLI --accept-source-agreements --accept-package-agreements
-
-          $pacRoot = "C:\Users\runneradmin\AppData\Local\Microsoft\PowerAppsCli"
-          $pacDir = Get-ChildItem "$pacRoot\Microsoft.PowerApps.CLI.*\tools" -Directory -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-
-          if (-not $pacDir) {
-            Write-Error "No se encontró la carpeta de PAC en $pacRoot"
-            exit 1
-          }
-
-          Write-Host "PAC encontrado en: $($pacDir.FullName)"
-
-          # Agregar al PATH para los siguientes steps
-          $pacDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          # Validación inmediata (en este step) sin depender del PATH
-          & "$($pacDir.FullName)\pac.exe" --version
+          npm install -g @microsoft/powerplatform-cli
+          pac --version
 
       # ==========================================
-      # DEPLOY DEL PCF
+      # DEPLOY PCF
       # ==========================================
       - name: Auth and Push PCF
         shell: pwsh
@@ -89,9 +71,6 @@ jobs:
           PP_CLIENT_ID:        ${{ secrets.PP_CLIENT_ID }}
           PP_CLIENT_SECRET:    ${{ secrets.PP_CLIENT_SECRET }}
         run: |
-          Write-Host "Control folder: $(Get-Location)"
-          pac --version
-
           pac auth clear
 
           pac auth create `
