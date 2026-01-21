@@ -22,9 +22,8 @@ const PRODUCTOS_API_URL =
   "https://224b058bd2304e15a2b940182c053c.42.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ee0e82298a764feab627da285b4f4cf0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=ryIo8QLIe0tyYa4mjcATer37ieEki708JqsMIaGb2kY";
 
 // Movimientos (GET con ?productoId=)
-const MOVIMIENTOS_API_URL =
-  "https://224b058bd2304e15a2b940182c053c.42.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/84065a81234e4b16899c1b4a5bcbfd5a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=N5F-ivVp4t_VV_6tJmxdYeY-R7-3Re7fCHD8y49JJDs";
-
+const MOVIMIENTOS_API_URL = 
+  "https://224b058bd2304e15a2b940182c053c.42.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/8663463ab11e44f3bed706052f6d134f/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=GjqIMXbrMNqZWXbp0v9yJCo2y_HM08LiQAWRGwmp8K4";
 // === Mensajes de error estandarizados ===
 const ERR_MSG = {
   persona:
@@ -96,7 +95,7 @@ type P2MovCfg = {
 
 
 
-export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs, IOutputs> {
+export class MovimientosCasoPCF implements ComponentFramework.StandardControl<IInputs, IOutputs> {
   private context!: ComponentFramework.Context<IInputs>;
   private container!: HTMLDivElement;
   private notifyOutputChanged!: () => void;
@@ -109,6 +108,9 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   private outAntiguedad: string = "";
   private outEmail: string = "";
   private outMobile: string = "";
+  private outRfc: string = "";
+  private outCurp: string = "";
+
 
   private outJsonPersona: string = "";
 
@@ -118,10 +120,15 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   private outGenderCode: number | undefined;
   private outMarcaDeVulnerabilidad: number | undefined;
 
+  private initialHasJsonPersona: boolean = false;
+
   private outSegmento: any;
   private outSucursal: any;
-  private outSucursalAlta: any;
   private customerid: any;
+
+  private userPerfilValue: number | null = null;     // option set (int)
+  private userPerfilLabel: string = "";              // texto formateado (opcional)
+  private userPerfilLoaded: boolean = false;
 
   // ===== Estado visual =====
   private state = {
@@ -138,6 +145,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       | "Cuentas"
       | "Créditos"
       | "Inversiones"
+      | "Seguros"
       | "Otros",
     productoSel: null as any,
 
@@ -233,18 +241,21 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     "Cuentas",
     "Créditos",
     "Inversiones",
+    "Seguros",
     "Otros",
   ];
 
   // mapping de códigos
   private categoriaToCodigo: Record<string, string> = {
     "Tarjeta de crédito": "P0-001",
-    "Tarjeta de débito": "P0-001",
+    "Tarjeta de débito": "P0-002",
     "Cuentas": "P0-002",
     "Créditos": "P0-003",
     "Inversiones": "P0-004",
-    "Otros": "P0-005",
+    "Seguros": "P0-005",
+    "Otros": "P0-006",
   };
+
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -296,6 +307,327 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     }
   }
 
+  // ========= Helpers: detectar GUIDs dentro del jsonPersona =========
+  private readonly GUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+  private extractGuid(value: any): string | null {
+    if (value == null) return null;
+
+    // lookup típico: [{ id: "{GUID}", name: "...", entityType: "..." }]
+    if (Array.isArray(value) && value.length > 0) {
+      const first = value[0];
+      const id = first?.id ?? first?.Id ?? null;
+      if (id) return this.cleanGuid(String(id));
+    }
+
+    // lookup típico: { id: "{GUID}", name: "...", entityType: "..." }
+    if (typeof value === "object") {
+      const id = (value as any)?.id ?? (value as any)?.Id ?? null;
+      if (id) return this.cleanGuid(String(id));
+    }
+
+    // string con guid embebido
+    if (typeof value === "string") {
+      const m = value.match(this.GUID_REGEX);
+      return m ? this.cleanGuid(m[0]) : null;
+    }
+
+    return null;
+  }
+
+  private normalizarProductosDesdeApi(body: any): any[] {
+    const out: any[] = [];
+    const arr = (v: any) => (Array.isArray(v) ? v : []);
+
+    const mkName = (categoria: string, raw: any) => {
+      // nombre “decente” para UI (ajústalo si ya tienes uno)
+      if (categoria === "Seguros") {
+        const pol = raw?.numeroPoliza ? `Póliza ${raw.numeroPoliza}` : "";
+        const ramo = raw?.ramo?.descripcion ? ` · ${raw.ramo.descripcion}` : "";
+        return (pol + ramo).trim() || "Seguro";
+      }
+      if (categoria === "Inversiones") {
+        const desc = raw?.producto?.descripcion || "";
+        const venc = raw?.fechaVencimiento ? ` · Vence ${this.toDateStd(raw.fechaVencimiento) ?? raw.fechaVencimiento}` : "";
+        return (desc ? `Inversión · ${desc}${venc}` : `Inversión${venc}`).trim();
+      }
+      const p = raw?.producto?.descripcion || raw?.producto?.codigo || "";
+      const sp = raw?.subproducto?.descripcion || raw?.subproducto?.codigo || "";
+      const extra = [p, sp].filter(Boolean).join(" · ");
+      return extra ? `${categoria} · ${extra}` : categoria;
+    };
+
+    const push = (categoria: string, tipo: string, idPref: any, raw: any) => {
+      const id = (idPref ?? raw?.numeroContrato ?? raw?.numeroPoliza ?? "").toString().trim();
+      out.push({
+        categoria,
+        tipo,                    // OJO: esto lo usas en buildContratoPayloadFromProducto
+        productoId: id,
+        contratoId: id,
+        name: mkName(categoria, raw),
+        raw,
+      });
+    };
+
+    // Tarjeta crédito (nuevo: cardId)
+    for (const x of arr(body?.tarjetaCreditos)) {
+      push("Tarjeta de crédito", "Tarjeta de Crédito", x?.cardId, x);
+    }
+
+    // Tarjeta débito (nuevo: cardId)
+    for (const x of arr(body?.tarjetaDebitos)) {
+      push("Tarjeta de débito", "Tarjeta de Débito", x?.cardId, x);
+    }
+
+    // Cuentas (nuevo: accountId)
+    for (const x of arr(body?.cuentaFondos)) {
+      push("Cuentas", "Cuenta", x?.accountId, x);
+    }
+
+    // Créditos (nuevo: loadId)
+    for (const x of arr(body?.creditos)) {
+      push("Créditos", "Crédito", x?.loadId, x);
+    }
+
+    // Inversiones (nuevo: investmentId)
+    for (const x of arr(body?.inversiones)) {
+      push("Inversiones", "Inversión", x?.investmentId, x);
+    }
+
+    // ✅ NUEVO: inversionesPlazo se muestra en el tab Inversiones
+    for (const x of arr(body?.inversionesPlazo)) {
+      push("Inversiones", "Inversión Plazo", x?.portfolioId, x);
+    }
+
+    // Seguros (nuevo: insuranceId)
+    for (const x of arr(body?.seguros)) {
+      push("Seguros", "Seguro", x?.insuranceId, x);
+    }
+
+    return out;
+  }
+
+
+  private tryReadJsonPersona(): any | null {
+    try {
+      const jsonStr = (this.getValueFromFormAttribute("xmsbs_jsonpersona") ?? "").trim();
+      if (!jsonStr) return null;
+      return JSON.parse(jsonStr);
+    } catch {
+      return null;
+    }
+  }
+
+  private hydratePersonaStateFromClienteSec(clienteSec: any) {
+    const datosVisible = clienteSec?.datosVisible ?? {};
+    const datosBase = clienteSec?.datosBase ?? {};
+    const datosCRM = clienteSec?.datosCRM ?? {};
+
+    const antiguedadTxt = this.formatAntiguedad(datosBase?.antiguedadClienteBanco);
+    const bancaActiva = !!datosCRM?.xmsbs_usuariobancaelectronica;
+
+    const buc =
+      this.nz(datosCRM?.xmsbs_buc) ||
+      this.nz(datosVisible?.buc) ||
+      this.nz(this.state.bucId);
+
+    const curp =
+      this.nz(datosCRM?.xmsbs_curp) ||
+      this.nz(datosVisible?.curp?.numero) ||
+      this.nz(datosBase?.curp?.numero);
+
+    const rfc =
+      this.nz(datosCRM?.xmsbs_rfc) ||
+      this.nz(datosVisible?.rfc?.numero) ||
+      this.nz(datosBase?.rfc?.numero);
+
+    const sucursalNombre =
+      this.nz(datosCRM?.xmsbs_sucursalTitular?.name) ||
+      this.nz(datosCRM?.xmsbs_sucursal?.name) ||
+      this.nz(datosVisible?.sucursalTitular?.descripcion) ||
+      this.nz(datosBase?.sucursalTitular?.descripcion) ||
+      this.nz(datosVisible?.sucursalAlta?.descripcion);
+
+    const cliente = {
+      nombre: this.nz(datosCRM?.xmsbs_firstname) || this.nz(datosVisible?.nombres),
+      primerApellido: this.nz(datosCRM?.xmsbs_middlename) || this.nz(datosVisible?.apellidoPaterno),
+      segundoApellido: this.nz(datosCRM?.xmsbs_lastname) || this.nz(datosVisible?.apellidoMaterno),
+
+      buc,
+      curp,
+      rfc,
+
+      antiguedad: antiguedadTxt,
+      sucursal: sucursalNombre,
+      segmento: this.nz(datosCRM?.xmsbs_segmento?.name) || this.nz(datosVisible?.segmento?.descripcion),
+      superMovil: bancaActiva ? "ACTIVO" : "Desactivo",
+      ejecutivoTitular: this.nz(datosCRM?.xmsbs_ejecutivotitular) || this.nz(datosBase?.ejecutivoTitular),
+      subsegmento: this.nz(datosCRM?.xmsbs_modeloatencion?.name),
+      _bancaActivaFlag: bancaActiva
+    };
+
+    const cust = datosCRM?.customerid ?? clienteSec?.customerid ?? null;
+
+    this.state = {
+      ...this.state,
+      cliente,
+      clienteError: "",
+      // IMPORTANTE: no tocamos productos/movimientos; solo aseguramos modo persona
+      productos: [],
+      productoSel: null,
+      preguntas: [],
+      preg1SelId: null,
+      preg1SelName: null,
+      preguntas2: [],
+      preg2SelId: null,
+      preg2SelName: null,
+      movimientos: [],
+      movLoading: false,
+      movError: "",
+      modoSoloCliente: true,
+      // refresca ids útiles para el render
+      bucId: buc || this.state.bucId,
+      crmCustomerGuid: this.nz(cust?.id) || this.state.crmCustomerGuid,
+      lockSoloPersona: this.hasSubcategoriaEnCaso(),
+      finalizarHabilitado: false,
+    };
+  }
+
+
+  /**
+   * Busca un GUID dentro del objeto JSON persona:
+   * - Primero intenta por keys exactas/candidatas
+   * - Luego intenta por búsqueda recursiva por nombre de key (contains)
+   */
+  private findGuidInJsonPersona(obj: any, keyCandidates: string[], keyContains: string[]): string | null {
+    if (!obj || typeof obj !== "object") return null;
+
+    // 1) match directo por keys candidatas
+    for (const k of keyCandidates) {
+      if (obj[k] !== undefined) {
+        const g = this.extractGuid(obj[k]);
+        if (g) return g;
+      }
+    }
+
+    // 2) búsqueda recursiva (limitada) por keys que "contengan" texto
+    const visited = new Set<any>();
+    const stack: Array<{ node: any; depth: number }> = [{ node: obj, depth: 0 }];
+    const MAX_DEPTH = 7;
+
+    while (stack.length) {
+      const { node, depth } = stack.pop()!;
+      if (!node || typeof node !== "object") continue;
+      if (visited.has(node)) continue;
+      visited.add(node);
+
+      if (depth > MAX_DEPTH) continue;
+
+      if (Array.isArray(node)) {
+        for (const it of node) stack.push({ node: it, depth: depth + 1 });
+        continue;
+      }
+
+      for (const [k, v] of Object.entries(node)) {
+        const kLower = k.toLowerCase();
+        const matchContains = keyContains.some(s => kLower.includes(s));
+
+        if (matchContains) {
+          const g = this.extractGuid(v);
+          if (g) return g;
+        }
+
+        if (v && typeof v === "object") {
+          stack.push({ node: v, depth: depth + 1 });
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Obtiene los IDs esperados desde jsonPersona para:
+   * - xmsbs_sucursaltitular
+   * - xmsbs_modeloatencion
+   * - xmsbs_segmento
+   *
+   * OJO: como no me mostraste la estructura exacta del JSON,
+   * esto busca por varias variantes comunes de nombre de propiedad.
+   */
+  private getExpectedIdsFromJsonPersona(): {
+    sucursalTitularId: string | null;
+    modeloAtencionId: string | null;
+    segmentoId: string | null;
+  } {
+    const jp = this.tryReadJsonPersona();
+    if (!jp) {
+      return { sucursalTitularId: null, modeloAtencionId: null, segmentoId: null };
+    }
+
+    const sucursalTitularId = this.findGuidInJsonPersona(
+      jp,
+      [
+        "xmsbs_sucursaltitular", "sucursalTitular", "sucursal_titular",
+        "sucursalTitularId", "idSucursalTitular", "sucursalTitularID",
+      ],
+      ["sucursaltitular", "sucursal_titular", "sucursal titular", "titular"]
+    );
+
+    const modeloAtencionId = this.findGuidInJsonPersona(
+      jp,
+      [
+        "xmsbs_modeloatencion", "modeloAtencion", "modelo_atencion",
+        "modeloAtencionId", "idModeloAtencion", "modeloAtencionID",
+      ],
+      ["modeloatencion", "modelo_atencion", "modelo atencion", "atencion"]
+    );
+
+    const segmentoId = this.findGuidInJsonPersona(
+      jp,
+      [
+        "xmsbs_segmento", "segmento", "segment",
+        "segmentoId", "idSegmento", "segmentoID",
+      ],
+      ["segmento", "segment"]
+    );
+
+    return { sucursalTitularId, modeloAtencionId, segmentoId };
+  }
+
+  /**
+   * ✅ Reingreso sin cambios:
+   * - Hay jsonPersona
+   * - Los 4 campos del Caso tienen lookupId
+   * - Y TODOS coinciden con lo que trae jsonPersona
+   */
+  private isReingresoSinCambiosPorJsonPersona(): boolean {
+    const jsonStr = (this.getValueFromFormAttribute("xmsbs_jsonpersona") ?? "").trim();
+    if (!jsonStr) return false;
+
+    const expected = this.getExpectedIdsFromJsonPersona();
+
+    // Si el JSON no trae los 4 IDs esperados, no bloqueamos nada (para no “tapar” casos reales).
+    if (!expected.sucursalTitularId || !expected.modeloAtencionId || !expected.segmentoId) {
+      return false;
+    }
+
+    const currentSucursalTitular = this.getLookupIdFromFormAttribute("xmsbs_sucursaltitular");
+    const currentModeloAtencion  = this.getLookupIdFromFormAttribute("xmsbs_modeloatencion");
+    const currentSegmento       = this.getLookupIdFromFormAttribute("xmsbs_segmento");
+
+    if (!currentSucursalTitular || !currentModeloAtencion || !currentSegmento) {
+      return false;
+    }
+
+    return (
+      currentSucursalTitular === expected.sucursalTitularId &&
+      currentModeloAtencion  === expected.modeloAtencionId &&
+      currentSegmento       === expected.segmentoId
+    );
+  }
+
+
   // Hook de error solicitado
   private callErrorHookCliente() {
     try {
@@ -328,19 +660,30 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
   // ================= Arranque =================
   private async boot(bucId: string) {
-  if (this.bootInProgress || this.bootDone) return;
+    if (this.bootInProgress || this.bootDone) return;
     this.bootInProgress = true;
 
     try {
-      // Si jsonPersona ya está COMPLETO → no hacer nada más.
-      if (this.cargarDesdeCampoJsonPersona()) {
+      // ✅ Detecta si ya venía json_persona al ENTRAR al caso
+      const rawJsonPersona = (this.getValueFromFormAttribute("xmsbs_jsonpersona") ?? "").toString().trim();
+      this.initialHasJsonPersona = !!rawJsonPersona;
+
+      // ✅ Reingreso: si ya existe json_persona → NO API, NO autosave
+      if (this.initialHasJsonPersona && this.cargarDesdeCampoJsonPersona(rawJsonPersona)) {
+        this.apiStarted = false;
+        this.autoSaveDone = true;
+        this.shouldAutoSaveAfterPersona = false;
+
         this.bootDone = true;
         this.render();
         return;
       }
 
-      // Caso contrario → lógica actual
+      // ✅ Primera vez (sin json_persona): flujo normal
       this.apiStarted = true;
+      this.autoSaveDone = false;
+      this.shouldAutoSaveAfterPersona = true;
+
       this.setLoading(true);
       this.render();
 
@@ -354,101 +697,36 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
 
+
   // ========= usar xmsbs_jsonpersona si existe (SOLO VALIDAR, SIN ESCRIBIR) =========
   private cargarDesdeCampoJsonPersona(rawOverride?: string): boolean {
-    const raw = (rawOverride ?? this.context.parameters.jsonPersona?.raw)?.toString()?.trim();
+    const raw = (rawOverride ?? this.getValueFromFormAttribute("xmsbs_jsonpersona") ?? "").toString().trim();
     if (!raw) return false;
 
     try {
-      const parsed       = JSON.parse(raw);
-      const clienteSec   = parsed?.clienteapi ?? parsed ?? {};
-      const datosVisible = clienteSec?.datosVisible ?? {};
-      const datosBase    = clienteSec?.datosBase ?? {};
+      const parsed = JSON.parse(raw);
 
-      const has = (v: any) =>
-        v !== null && v !== undefined && String(v).trim() !== "";
+      // Tu API guarda: { clienteapi: clienteSec }
+      const clienteSec = parsed?.clienteapi ?? parsed ?? {};
+      if (!clienteSec || typeof clienteSec !== "object") return false;
 
-      const norm = (v: any) =>
-        String(v ?? "").trim().toLowerCase();
+      // Validación mínima: si no trae ninguna estructura típica, no lo usamos
+      const hasAlgo =
+        !!clienteSec?.datosVisible ||
+        !!clienteSec?.datosBase ||
+        !!clienteSec?.datosCRM;
 
-      const equals = (a: any, b: any) =>
-        norm(a) === norm(b);
+      if (!hasAlgo) return false;
 
-      // Helper: si el valor viene como lookup serializado (JSON string), extraer el name
-      const getLookupName = (rawStr: string | null): string | null => {
-        if (!rawStr) return null;
-        const s = rawStr.toString().trim();
-        if (!s) return null;
-        try {
-          const parsed = JSON.parse(s);
-          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.name) {
-            return String(parsed[0].name);
-          }
-        } catch {
-          // Si no es JSON, usamos el string tal cual
-        }
-        return s;
-      };
+      // ✅ SOLO pintar persona en el PCF desde JSON (sin outputs/CRM)
+      this.hydratePersonaStateFromClienteSec(clienteSec);
 
-      // Leemos lo que tiene hoy el formulario de CRM:
-      const formFirstNameRaw   = this.getValueFromFormAttribute("xmsbs_firstname");
-      const formMiddleNameRaw  = this.getValueFromFormAttribute("xmsbs_middlename");
-      const formLastNameRaw    = this.getValueFromFormAttribute("xmsbs_lastname");
-      const formBucRaw         = this.getValueFromFormAttribute("xmsbs_buc");
-      const formSegmentoRaw    = this.getValueFromFormAttribute("xmsbs_segmento");
-      const formSucursalTitRaw = this.getValueFromFormAttribute("xmsbs_sucursalTitular");
-      const formCustomerId     = this.getValueFromFormAttribute("customerid");
-
-      const formFirstName   = formFirstNameRaw;
-      const formMiddleName  = formMiddleNameRaw;
-      const formLastName    = formLastNameRaw;
-      const formBuc         = formBucRaw;
-      const formSegmento    = getLookupName(formSegmentoRaw);
-      const formSucursalTit = getLookupName(formSucursalTitRaw);
-
-      // Valores "esperados" según jsonPersona
-      const jsonFirstName   = datosVisible?.nombres;
-      const jsonMiddleName  = datosVisible?.apellidoPaterno;
-      const jsonLastName    = datosVisible?.apellidoMaterno;
-      const jsonBuc         = datosVisible?.buc;
-
-      const jsonSegmentoNombre =
-        datosVisible?.segmento?.descripcion ??
-        datosVisible?.segmentoNombre;
-
-      const jsonSucursalTitNombre =
-        datosBase?.sucursalTitular?.descripcion ??
-        datosBase?.sucursalTitularNombre;
-
-      // Regla: solo consideramos "completo y en sync" si:
-      // - Hay customerid en el formulario
-      // - Y para cada campo que venga en el JSON, el formulario tiene el mismo valor
-      const completo =
-        has(formCustomerId) &&
-
-        // Nombres
-        (!has(jsonFirstName)  || equals(formFirstName,  jsonFirstName)) &&
-        (!has(jsonMiddleName) || equals(formMiddleName, jsonMiddleName)) &&
-        (!has(jsonLastName)   || equals(formLastName,   jsonLastName)) &&
-
-        // BUC
-        (!has(jsonBuc) || equals(formBuc, jsonBuc)) &&
-
-        // Segmento (si viene desde JSON)
-        (!has(jsonSegmentoNombre) || equals(formSegmento, jsonSegmentoNombre)) &&
-
-        // Sucursal titular (si viene desde JSON)
-        (!has(jsonSucursalTitNombre) || equals(formSucursalTit, jsonSucursalTitNombre));
-
-      // IMPORTANTE: esta función SOLO chequea, no escribe nada en el formulario.
-      // Se usa para decidir si:
-      //   - podemos saltarnos la API de Persona, y
-      //   - desactivar el autosave (shouldAutoSaveAfterPersona = false)
-      return !!completo;
+      return true;
     } catch {
       return false;
     }
   }
+
 
 
 
@@ -465,16 +743,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       const body = json?.body ?? json;
       const clienteSec = body ?? {};
 
-      // Validación mínima
       const datosVisible = clienteSec?.datosVisible ?? {};
       const datosBase = clienteSec?.datosBase ?? {};
       const datosCRM = clienteSec?.datosCRM ?? {};
-      const hasCliente =
-        !!(datosCRM?.xmsbs_firstname || datosVisible?.nombres || datosCRM?.customerid?.id || datosVisible?.buc);
 
-      if (!hasCliente) {
-        throw new Error("NO_CLIENTE");
-      }
+      const hasCliente =
+        !!(datosCRM?.xmsbs_firstname || datosVisible?.nombres || datosCRM?.customerid?.id || datosVisible?.buc || datosCRM?.xmsbs_buc);
+
+      if (!hasCliente) throw new Error("NO_CLIENTE");
 
       this.mapearYExponerCamposCasoDesdeClienteSec(clienteSec);
       this.setBound("outJsonPersona", JSON.stringify({ clienteapi: clienteSec }, null, 2));
@@ -482,13 +758,44 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       const antiguedadTxt = this.formatAntiguedad(datosBase?.antiguedadClienteBanco);
       const bancaActiva = !!datosCRM?.xmsbs_usuariobancaelectronica;
 
+      // ✅ BUC (nuevo/viejo)
+      const buc =
+        this.nz(datosCRM?.xmsbs_buc) ||
+        this.nz(datosVisible?.buc) ||
+        this.nz(bucId);
+
+      // ✅ CURP (nuevo/viejo)
+      const curp =
+        this.nz(datosCRM?.xmsbs_curp) ||                    // NEW
+        this.nz(datosVisible?.curp?.numero) ||             // NEW
+        this.nz(datosBase?.curp?.numero);                  // OLD
+
+      // ✅ RFC (nuevo/viejo)
+      const rfc =
+        this.nz(datosCRM?.xmsbs_rfc) ||                     // NEW
+        this.nz(datosVisible?.rfc?.numero) ||              // NEW
+        this.nz(datosBase?.rfc?.numero);                   // OLD
+
+      // ✅ Sucursal (nuevo/viejo)
+      const sucursalNombre =
+        this.nz(datosCRM?.xmsbs_sucursalTitular?.name) ||          // OLD
+        this.nz(datosCRM?.xmsbs_sucursal?.name) ||                 // NEW
+        this.nz(datosVisible?.sucursalTitular?.descripcion) ||     // NEW
+        this.nz(datosBase?.sucursalTitular?.descripcion) ||        // OLD
+        this.nz(datosVisible?.sucursalAlta?.descripcion);          // OLD
+
       const cliente = {
         nombre: this.nz(datosCRM?.xmsbs_firstname) || this.nz(datosVisible?.nombres),
         primerApellido: this.nz(datosCRM?.xmsbs_middlename) || this.nz(datosVisible?.apellidoPaterno),
         segundoApellido: this.nz(datosCRM?.xmsbs_lastname) || this.nz(datosVisible?.apellidoMaterno),
-        curp: this.nz(datosCRM?.xmsbs_buc) || this.nz(datosVisible?.buc),
+
+        // ✅ AHORA separados
+        buc,
+        curp,
+        rfc,
+
         antiguedad: antiguedadTxt,
-        sucursal: this.nz(datosCRM?.xmsbs_sucursalTitular?.name) || this.nz(datosBase?.sucursalTitular?.descripcion),
+        sucursal: sucursalNombre,
         segmento: this.nz(datosCRM?.xmsbs_segmento?.name) || this.nz(datosVisible?.segmento?.descripcion),
         superMovil: bancaActiva ? "ACTIVO" : "Desactivo",
         ejecutivoTitular: this.nz(datosCRM?.xmsbs_ejecutivotitular) || this.nz(datosBase?.ejecutivoTitular),
@@ -522,7 +829,6 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       this.state.cliente = null;
       this.state.clienteError = ERR_MSG.persona;
 
-      // Evitar autosave cuando hubo error
       this.showCrmAlert(ERR_MSG.persona);
       this.callErrorHookCliente();
       this.apiStarted = false;
@@ -533,6 +839,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       this.render();
     }
   }
+
 
   // ========= API Productos (GET al presionar botón) =========
   private async cargarProductos() {
@@ -559,10 +866,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       const resp = await fetch(url, { method: "GET" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-      const json = await resp.json();
-      const body = json?.body ?? json;
+      const json = await resp.json().catch(() => ({}));
+      const raw = json?.body ?? json;
+
+      // ✅ si viene string, lo parseamos
+      const body = typeof raw === "string" ? JSON.parse(raw) : raw;
 
       const productos = this.unificarProductos(body);
+
 
       this.state = {
         ...this.state,
@@ -596,109 +907,76 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
   // ===== Unificador de productos (con brandIconUrl) =====
-  private unificarProductos(body: any): any[] {
+  private unificarProductos(apiBody: any): any[] {
     const out: any[] = [];
+    const arr = (v: any) => (Array.isArray(v) ? v : []);
 
-    // Tarjetas de crédito
-    const tcs: any[] = Array.isArray(body?.tarjetaCreditos) ? body.tarjetaCreditos : [];
-    for (const x of tcs) {
-      const brand = x?.indicadorMarca?.descripcion || x?.tipoTarjeta?.descripcion;
+    const push = (categoria: string, tipo: string, productoId: any, contratoId: any, raw: any, extra?: any) => {
       out.push({
-        categoria: "Tarjeta de crédito",
-        productoId: this.maskCard(x?.numeroTarjeta) || x?.numeroContrato || "Tarjeta de Crédito",
-        tipo: "Tarjeta de Crédito",
-        tipoPlastico: brand,
-        brandIconUrl: this.getBrandIconUrl(brand),
-        estatus: x?.estatusTarjeta?.descripcion,
-        saldoDisponible: this.moneyToNumber(x?.saldoDisponible),
-        contratoId: x?.numeroContrato,
-        raw: x,
+        categoria,
+        tipo,
+        productoId: (productoId ?? "").toString(),
+        contratoId: (contratoId ?? "").toString(),
+        raw,
+        ...(extra ?? {}),
       });
+    };
+
+    // ===== Tarjeta de crédito =====
+    for (const t of arr(apiBody?.tarjetaCreditos)) {
+      // nuevo: cardId
+      const productoId = t?.cardId || t?.numeroTarjeta || t?.numeroContrato;
+      const contratoId = t?.numeroContrato ?? "";
+      push("Tarjeta de crédito", "Tarjeta de Crédito", productoId, contratoId, t);
     }
 
-    // Tarjetas de débito
-    const tds: any[] = Array.isArray(body?.tarjetaDebitos) ? body.tarjetaDebitos : [];
-    for (const x of tds) {
-      const brand = x?.indicadorMarca?.descripcion || x?.tipoTarjeta?.descripcion;
-      out.push({
-        categoria: "Tarjeta de débito",
-        productoId: this.maskCard(x?.numeroTarjeta) || x?.numeroContrato || "Tarjeta de Débito",
-        tipo: "Tarjeta de Débito",
-        tipoPlastico: brand,
-        brandIconUrl: this.getBrandIconUrl(brand),
-        estatus: x?.estatusTarjeta?.descripcion,
-        saldoDisponible: this.moneyToNumber(x?.saldoDisponible),
-        contratoId: x?.numeroContrato,
-        raw: x,
-      });
+    // ===== Tarjeta de débito =====
+    for (const t of arr(apiBody?.tarjetaDebitos)) {
+      const productoId = t?.cardId || t?.numeroTarjeta || t?.numeroContrato;
+      const contratoId = t?.numeroContrato ?? "";
+      push("Tarjeta de débito", "Tarjeta de Débito", productoId, contratoId, t);
     }
 
-    // Cuentas
-    const cfs: any[] = Array.isArray(body?.cuentaFondos) ? body.cuentaFondos : [];
-    for (const x of cfs) {
-      out.push({
-        categoria: "Cuentas",
-        productoId: x?.numeroContrato || x?.clabe || "Cuenta",
-        tipo: "Cuenta",
-        tipoPlastico: "",
-        brandIconUrl: this.getBrandIconUrl(""),
-        estatus: x?.estatusTarjeta?.descripcion || "",
-        saldoDisponible: this.moneyToNumber(x?.saldoDisponible),
-        contratoId: x?.numeroContrato,
-        raw: x,
-      });
+    // ===== Cuentas (cuentaFondos) =====
+    for (const c of arr(apiBody?.cuentaFondos)) {
+      const productoId = c?.accountId || c?.clabe || c?.numeroContrato;
+      const contratoId = c?.numeroContrato ?? "";
+      push("Cuentas", "Cuenta", productoId, contratoId, c);
     }
 
-    // Créditos
-    const cre: any[] = Array.isArray(body?.creditos) ? body.creditos : [];
-    for (const x of cre) {
-      out.push({
-        categoria: "Créditos",
-        productoId: x?.numeroContrato || "Crédito",
-        tipo: "Crédito",
-        tipoPlastico: "",
-        brandIconUrl: this.getBrandIconUrl(""),
-        estatus: x?.estatusCredito?.descripcion,
-        saldoDisponible: this.moneyToNumber(x?.saldoDisponible),
-        contratoId: x?.numeroContrato,
-        raw: x,
-      });
+    // ===== Créditos =====
+    for (const cr of arr(apiBody?.creditos)) {
+      const productoId = cr?.loadId || cr?.numeroContrato;
+      const contratoId = cr?.numeroContrato ?? "";
+      push("Créditos", "Crédito", productoId, contratoId, cr);
     }
 
-    // Inversiones
-    const invs: any[] = Array.isArray(body?.inversiones) ? body.inversiones : [];
-    for (const x of invs) {
-      out.push({
-        categoria: "Inversiones",
-        productoId: x?.numeroContrato || "Inversión",
-        tipo: "Inversión",
-        tipoPlastico: "",
-        brandIconUrl: this.getBrandIconUrl(""),
-        estatus: x?.estadoInversion?.descripcion,
-        saldoDisponible: this.moneyToNumber(x?.saldoDisponible || x?.montoInvertido),
-        contratoId: x?.numeroContrato,
-        raw: x,
-      });
+    // ===== Inversiones =====
+    for (const inv of arr(apiBody?.inversiones)) {
+      const productoId = inv?.investmentId || inv?.numeroContrato;
+      const contratoId = inv?.numeroContrato ?? "";
+      // tipo se mantiene "Inversión" para que tu buildContratoPayloadFromProducto la reconozca
+      push("Inversiones", "Inversión", productoId, contratoId, inv, { esPlazo: false });
     }
 
-    // Seguros → Otros
-    const segs: any[] = Array.isArray(body?.seguros) ? body.seguros : [];
-    for (const x of segs) {
-      out.push({
-        categoria: "Otros",
-        productoId: x?.numeroPoliza || "Seguro",
-        tipo: "Seguro",
-        tipoPlastico: x?.ramo?.descripcion || "",
-        brandIconUrl: this.getBrandIconUrl(""),
-        estatus: x?.estadoSeguro?.descripcion,
-        saldoDisponible: undefined,
-        contratoId: x?.numeroPoliza,
-        raw: x,
-      });
+    // ===== InversionesPlazo (NUEVO) -> MISMO TAB "Inversiones" =====
+    for (const invp of arr(apiBody?.inversionesPlazo)) {
+      const productoId = invp?.portfolioId || invp?.numeroContrato;
+      const contratoId = invp?.numeroContrato ?? "";
+      // OJO: dejamos tipo "Inversión" para que tu payload de contrato funcione
+      push("Inversiones", "Inversión", productoId, contratoId, invp, { esPlazo: true });
+    }
+
+    // ===== Seguros (NUEVO) =====
+    for (const s of arr(apiBody?.seguros)) {
+      const productoId = s?.insuranceId || s?.numeroPoliza;
+      const contratoId = s?.numeroPoliza ?? "";
+      push("Seguros", "Seguro", productoId, contratoId, s);
     }
 
     return out;
   }
+
 
   // ===== Mapear JSON de persona → Outputs =====
   private mapearYExponerCamposCasoDesdeClienteSec(clienteSec: any) {
@@ -715,6 +993,8 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     this.setBound("outAntiguedad", antiguedadTxt);
     this.setBound("outEmail", this.nz(datosCRM?.emailaddress) || this.nz(datosVisible?.correoElectronico));
     this.setBound("outMobile", this.nz(datosCRM?.xmsbs_mobilephone) || this.nz(datosVisible?.numeroTelefonoCelular));
+    this.setBound("outRfc", this.nz(datosVisible?.rfc?.numero));
+    this.setBound("outCurp", this.nz(datosVisible?.curp?.numero));
 
     this.setBound("outUsuarioBancaElectronica", !!datosCRM?.xmsbs_usuariobancaelectronica || !!datosVisible?.usaBancaDigital);
     this.setBound("outTenenciaProductos", !!datosCRM?.xmsbs_tenenciaproductos || !!datosVisible?.tenenciaProducto);
@@ -727,7 +1007,6 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
     this.setBound("outSegmento", this.makeLookup(datosCRM?.xmsbs_segmento));
     this.setBound("outSucursal", this.makeLookup(datosCRM?.xmsbs_sucursalTitular));
-    this.setBound("outSucursalAlta", this.makeLookup(datosCRM?.xmsbs_sucursalalta));
 
     const cust = datosCRM?.customerid ?? clienteSec?.customerid ?? null;
     this.setBound("customerid", this.makeLookup(cust));
@@ -749,7 +1028,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
             <img class="ico" src="https://mxmidasacldyndev.crm.dynamics.com/WebResources/xmsbs_contact_vector_48x48?preview=1" alt="">
             <div class="user-text">
               <div class="name">${this.safe(c.nombre)} ${this.safe(c.primerApellido)} ${this.safe(c.segundoApellido)}</div>
-              <div class="muted">BUC: ${this.safe(c.curp)}</div>
+              <div class="muted">BUC: ${this.safe(c.buc)}</div>
             </div>
           </div>
           <div class="item">
@@ -1117,16 +1396,25 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
         <div class="field"><div class="field-label">Rendimiento estimado / tasa contratada</div><div class="field-value">${(r?.rendimientoEstimadoTasaContratada!=null)? (Number(r.rendimientoEstimadoTasaContratada)*100).toFixed(2)+'%':''}</div></div>
         <div class="field"><div class="field-label">Plazo</div><div class="field-value">${this.safe(r?.plazo?.monto)}</div></div>
         <div class="field"><div class="field-label">Vencimiento</div><div class="field-value">${fmt(r?.vencimiento || r?.fechaVencimiento)}</div></div>
-        <div class="field"><div class="field-label">Estado actual</div><div class="field-value">${this.safe(r?.estadoInversion?.descripcion)}</div></div>
+        <div class="field"><div class="field-label">Estado actual</div><div class="field-value">${
+          this.safe(
+            r?.estatusInversion?.descripcion ??
+            r?.estatusInversionPlazo?.descripcion ??
+            r?.estadoInversion?.descripcion
+          )
+        }</div></div>
+
       ` : "";
 
-    const bloqueSeguros = p && p.categoria === "Otros" ? `
-        <div class="field"><div class="field-label">Número de póliza</div><div class="field-value">${this.safe(r?.numeroPoliza)}</div></div>
-        <div class="field"><div class="field-label">Ramo</div><div class="field-value">${this.safe(r?.ramo?.descripcion)}</div></div>
-        <div class="field"><div class="field-label">Fecha de contratación</div><div class="field-value">${fmt(r?.fechaAltaContrato)}</div></div>
-        <div class="field"><div class="field-label">Fecha de vencimiento</div><div class="field-value">${fmt(r?.fechaVencimiento)}</div></div>
-        <div class="field"><div class="field-label">Estado del seguro</div><div class="field-value">${this.safe(r?.estadoSeguro?.descripcion)}</div></div>
-      ` : "";
+    const bloqueSeguros = p && p.categoria === "Seguros" ? `
+      <div class="field"><div class="field-label">Número de póliza</div><div class="field-value">${this.safe(r?.numeroPoliza)}</div></div>
+      <div class="field"><div class="field-label">Ramo</div><div class="field-value">${this.safe(r?.ramo?.descripcion)}</div></div>
+      <div class="field"><div class="field-label">Canal contratación</div><div class="field-value">${this.safe(r?.canalContratacion?.descripcion || r?.canalContratacion?.codigo)}</div></div>
+      <div class="field"><div class="field-label">Fecha de contratación</div><div class="field-value">${fmt(r?.fechaAltaContrato)}</div></div>
+      <div class="field"><div class="field-label">Fecha de vencimiento</div><div class="field-value">${fmt(r?.fechaVencimiento)}</div></div>
+      <div class="field"><div class="field-label">Estado del seguro</div><div class="field-value">${this.safe(r?.estadoSeguro?.descripcion)}</div></div>
+    ` : "";
+
 
     const datosProducto = p
     ? `
@@ -1279,6 +1567,27 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     const id = this.cleanGuid(productoId);
     if (!id) return [];
 
+    // ✅ Nos aseguramos de tener el perfil del usuario (idempotente)
+    await this.ensureUserPerfilLoaded();
+
+    // Helper: parsea MultiSelect OptionSet (puede venir string "1,2", array, number, etc.)
+    const parseMultiSelect = (v: any): number[] => {
+      if (v === null || v === undefined || v === "") return [];
+      if (Array.isArray(v)) {
+        return v
+          .map(x => Number(x))
+          .filter(n => isFinite(n));
+      }
+      if (typeof v === "number") return isFinite(v) ? [v] : [];
+      const s = String(v).trim();
+      if (!s) return [];
+      // suele venir "100000000,100000001"
+      return s
+        .split(",")
+        .map(x => Number(String(x).trim()))
+        .filter(n => isFinite(n));
+    };
+
     const query =
       `?$select=` +
       [
@@ -1289,49 +1598,130 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
         "xmsbs_ultimapregunta",
         "xmsbs_tienemovimientos",
         "_xmsbs_subcategoria_value",
-        // NUEVO: lookup de configuración de movimiento
         "_xmsbs_confmovimiento_value",
+        // ✅ NUEVO: multiselect perfil en Pregunta1
+        "xmsbs_perfil",
       ].join(",") +
       `&$filter=_xmsbs_producto_value eq ${id}` +
       `&$orderby=xmsbs_codigo asc`;
 
     const res = await api.retrieveMultipleRecords("xmsbs_pregunta1", query);
-    return (res?.entities ?? []).map((e: any) => ({
-      id: e.xmsbs_pregunta1id,
-      name: e.xmsbs_name,
-      code: e.xmsbs_codigo,
-      ultimaPregunta: e.xmsbs_ultimapregunta,
-      tieneMovimientos: e.xmsbs_tienemovimientos,
-      subcategoriaId: e._xmsbs_subcategoria_value ?? null,
-      // NUEVO: guardamos la conf de movimientos
-      confMovId: e._xmsbs_confmovimiento_value ?? null,
-    }));
+
+    const perfilUsuario = this.userPerfilValue; // optionSet (single) del systemuser
+
+    const all = (res?.entities ?? []).map((e: any) => {
+      const perfilesPregunta = parseMultiSelect(e?.xmsbs_perfil);
+
+      return {
+        id: e.xmsbs_pregunta1id,
+        name: e.xmsbs_name,
+        code: e.xmsbs_codigo,
+        ultimaPregunta: e.xmsbs_ultimapregunta,
+        tieneMovimientos: e.xmsbs_tienemovimientos,
+        subcategoriaId: e._xmsbs_subcategoria_value ?? null,
+        confMovId: e._xmsbs_confmovimiento_value ?? null,
+
+        // (opcional) si quieres inspección/debug:
+        // perfiles: perfilesPregunta,
+      } as Pregunta1 & { __perfiles?: number[] };
+    });
+
+    // ✅ FILTRO por perfil:
+    // Regla que recomiendo (segura y práctica):
+    // - Si Pregunta1.xmsbs_perfil está vacío => visible para todos (sin restricción).
+    // - Si tiene valores => visible solo si contiene el perfil del usuario conectado.
+    // - Si el usuario NO tiene perfil => dejamos solo las preguntas sin restricción (perfiles vacío).
+    const filtradas = all.filter((q: any, i: number) => {
+      const e = (res?.entities ?? [])[i] as any;
+      const perfilesPregunta = parseMultiSelect(e?.xmsbs_perfil);
+
+      if (!perfilesPregunta.length) return true; // sin restricción
+      if (perfilUsuario === null || perfilUsuario === undefined) return false; // usuario sin perfil: NO ve restringidas
+      return perfilesPregunta.includes(perfilUsuario);
+    });
+
+    return filtradas;
   }
+
+
 
 
   private async cargarPreguntasParaCategoria(categoria: string) {
     try {
+      // NUEVO: cargar perfil del usuario conectado ANTES de traer Pregunta1
+      // (para que getPreguntasPorProducto pueda filtrar por perfil)
+      await this.ensureUserPerfilLoaded();
+
       const codigo = this.categoriaToCodigo[categoria];
       if (!codigo) {
-        this.state = { ...this.state, preguntas: [], preg1SelId: null, preg1SelName: null, preguntas2: [], preg2SelId: null, preg2SelName: null, movimientos: [], movError: "", finalizarHabilitado: false };
+        this.state = {
+          ...this.state,
+          preguntas: [],
+          preg1SelId: null,
+          preg1SelName: null,
+          preguntas2: [],
+          preg2SelId: null,
+          preg2SelName: null,
+          movimientos: [],
+          movError: "",
+          finalizarHabilitado: false,
+        };
         this.render();
         return;
       }
+
       const productoId = await this.getProductoIdPorCodigo(codigo);
       if (!productoId) {
-        this.state = { ...this.state, preguntas: [], preg1SelId: null, preg1SelName: null, preguntas2: [], preg2SelId: null, preg2SelName: null, movimientos: [], movError: "", finalizarHabilitado: false };
+        this.state = {
+          ...this.state,
+          preguntas: [],
+          preg1SelId: null,
+          preg1SelName: null,
+          preguntas2: [],
+          preg2SelId: null,
+          preg2SelName: null,
+          movimientos: [],
+          movError: "",
+          finalizarHabilitado: false,
+        };
         this.render();
         return;
       }
+
+      // Pregunta1 ya viene filtrada por perfil dentro de getPreguntasPorProducto
       const qs = await this.getPreguntasPorProducto(productoId);
-      this.state = { ...this.state, preguntas: qs, preg1SelId: null, preg1SelName: null, preguntas2: [], preg2SelId: null, preg2SelName: null, movimientos: [], movError: "", finalizarHabilitado: false };
+
+      this.state = {
+        ...this.state,
+        preguntas: qs,
+        preg1SelId: null,
+        preg1SelName: null,
+        preguntas2: [],
+        preg2SelId: null,
+        preg2SelName: null,
+        movimientos: [],
+        movError: "",
+        finalizarHabilitado: false,
+      };
       this.render();
     } catch (e) {
       console.error("Error cargando preguntas para categoría:", categoria, e);
-      this.state = { ...this.state, preguntas: [], preg1SelId: null, preg1SelName: null, preguntas2: [], preg2SelId: null, preg2SelName: null, movimientos: [], movError: "", finalizarHabilitado: false };
+      this.state = {
+        ...this.state,
+        preguntas: [],
+        preg1SelId: null,
+        preg1SelName: null,
+        preguntas2: [],
+        preg2SelId: null,
+        preg2SelName: null,
+        movimientos: [],
+        movError: "",
+        finalizarHabilitado: false,
+      };
       this.render();
     }
   }
+
 
   // Preguntas 2 por Pregunta 1
   // Preguntas 2 por Pregunta 1
@@ -1509,13 +1899,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     });
 
     // === NUEVO: cambios en combos de P1Movimiento / P2Movimiento ===
+    // === NUEVO: cambios en combos de P1Movimiento / P2Movimiento ===
     this.container.addEventListener("change", (ev) => {
-      const t = ev.target as HTMLSelectElement | null;
-      if (!t) return;
+      const el = ev.target as any;
+      if (!el?.id) return;
 
       // Selección de P1Movimiento
-      if (t.id === "mov-p1-select") {
-        const val = t.value || "";
+      if (el.id === "mov-p1-select") {
+        const val = this.getFluentSelectedValue(el) ?? "";
         this.state.movP1SelId = val || null;
 
         // Al cambiar P1Mov, reseteamos P2Mov
@@ -1528,18 +1919,17 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
         (async () => {
           if (p1Sel && !esUltimaP1Mov) {
-            // P1Mov no es última → cargamos P2Movimientos
             await this.cargarP2MovimientosPorP1Mov(p1Sel.id);
           }
-          // Recalcular habilitación de Continuar Alta
           this.recomputeFinalizarPorMovimientos();
           this.render();
         })();
       }
 
       // Selección de P2Movimiento
-      if (t.id === "mov-p2-select") {
-        this.state.movP2SelId = t.value || null;
+      if (el.id === "mov-p2-select") {
+        const val = this.getFluentSelectedValue(el) ?? "";
+        this.state.movP2SelId = val || null;
         this.recomputeFinalizarPorMovimientos();
         this.render();
       }
@@ -1554,14 +1944,20 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     const productoIdUI = (prod?.productoId ?? "").toString();
     const contratoIdUI = (prod?.contratoId ?? "").toString();
 
-    if (!productoIdUI && !contratoIdUI) {
+    const buc = this.getBucFromForm();
+    const tipoTransaccion = Number(this.getTipoTransaccionParaMovs()); // 1 o 2
+
+    const cardAccountId = productoIdUI;
+    const contractId = contratoIdUI;
+
+    // ✅ Validación:
+    // - Siempre necesito BUC
+    // - Siempre necesito cardAccountId (porque es tu "productoIdUI")
+    // - contractId SOLO es obligatorio si tipoTransaccion != 1
+    if (!buc || !cardAccountId || (!contractId && tipoTransaccion !== 1)) {
       this.showCrmAlert(ERR_MSG.movimientos);
       return;
     }
-
-    const payloadId = /\*/.test(productoIdUI) && contratoIdUI
-      ? contratoIdUI
-      : (productoIdUI || contratoIdUI);
 
     this.showGlobalProgress("Cargando movimientos…");
     this.state.movLoading = true;
@@ -1569,16 +1965,20 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     this.render();
 
     try {
-      // Construir URL con parámetros para GET
+      // ✅ GET con query params (SIN body)
       const urlGET = this.addQueryParams(MOVIMIENTOS_API_URL, {
-        productoId: payloadId
+        buc: buc,
+        cardAccountId: cardAccountId,
+        // ✅ si tipoTransaccion=1 => NO mandamos contractId (queda vacío y addQueryParams lo omitirá)
+        contractId: (tipoTransaccion === 1 ? "" : contractId),
+        tipoTransaccion: String(tipoTransaccion),
       });
 
       const resp = await fetch(urlGET, {
         method: "GET",
         mode: "cors",
         cache: "no-cache",
-        headers: { "Accept": "application/json" }
+        headers: { "Accept": "application/json" },
       });
 
       if (!resp.ok) {
@@ -1588,20 +1988,16 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
       const asJson = await resp.json().catch(() => ({}));
       const raw = asJson?.body ?? asJson;
-
-      // Parsear si viene como string
       const body = typeof raw === "string" ? JSON.parse(raw) : raw;
 
-      // IMPORTANTE: pasamos la categoría actual para filtrar tipoTransaccion
       const categoriaActual = this.state.categoria || "";
       const normalizados = this.normalizarMovimientos(body, categoriaActual);
 
       this.state.movimientos = normalizados;
 
-      // Reset selección y paginación, mantener filtros
       this.state.movTable.selected = new Set<number>();
       this.state.movTable.pageIndex = 0;
-      // Reset de lógica de TipoMov / P1Movimiento / P2Movimiento
+
       this.state.movTipoSel = null;
       this.state.movP1Opciones = [];
       this.state.movP1SelId = null;
@@ -1612,13 +2008,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     } catch (e: any) {
       console.error("[PCF] Error al cargar movimientos:", e);
       this.state.movimientos = [];
-      // Reset de lógica de TipoMov / P1Movimiento / P2Movimiento
+
       this.state.movTipoSel = null;
       this.state.movP1Opciones = [];
       this.state.movP1SelId = null;
       this.state.movP2Opciones = [];
       this.state.movP2SelId = null;
       this.recomputeFinalizarPorMovimientos();
+
       this.state.movError = e?.message ?? ERR_MSG.movimientos;
 
     } finally {
@@ -1627,6 +2024,10 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       this.render();
     }
   }
+
+
+
+
 
 
   /**
@@ -1719,6 +2120,16 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   // Normalizador compatible nuevo/legacy (incluye duplicado, referencia, PAN y tipo de cambio + aclaración + __raw)
   private normalizarMovimientos(apiBody: any, categoriaActual: string = "") {
     const out: any[] = [];
+
+    // Helper: retorna el primer texto "usable" (no null/undefined/vacío/solo espacios)
+    const pickText = (...vals: any[]): string => {
+      for (const v of vals) {
+        const s = (v ?? "").toString().trim();
+        if (s) return s;
+      }
+      return "";
+    };
+
     try {
       const esNueva =
         Array.isArray(apiBody?.movimientos) &&
@@ -1740,20 +2151,47 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
         });
 
         for (const t of filtrados) {
-          const comercio = t?.nombreComercio ?? t?.descripcionOperacion ?? "";
-          const fechaISO = t?.fechaOperacion ?? t?.fechaAutorizacion ?? null;
-          const sign = (t?.indicadorCargoAbono === "-") ? -1 : 1;
-          const monto = Number(t?.importe?.monto ?? t?.importeOriginal?.monto ?? t?.montoOriginal?.monto ?? 0) * sign;
+          // ✅ FIX: en Cuentas nombreComercio suele venir "" (vacío) y el ?? no cae al fallback.
+          // Por eso usamos pickText y además priorizamos descripcionOperacion para Cuentas.
+          const isCuentas = (categoriaActual === "Cuentas") || Number(t?.tipoTransaccion) === 2;
 
-          const referencia = t?.numeroReferencia ?? t?.referencia ?? "";
+          const comercio = isCuentas
+            ? pickText(t?.descripcionOperacion, t?.nombreComercio)
+            : pickText(t?.nombreComercio, t?.descripcionOperacion);
+
+          const fechaISO = t?.fechaOperacion ?? t?.fechaAutorizacion ?? null;
+
+          const sign = (t?.indicadorCargoAbono === "-") ? -1 : 1;
+          const monto = Number(
+            t?.importe?.monto ??
+            t?.importeOriginal?.monto ??
+            t?.montoOriginal?.monto ??
+            0
+          ) * sign;
+
+          // ✅ referencia: ahora puede venir transactionId
+          const referencia = t?.numeroReferencia ?? t?.referencia ?? t?.transactionId ?? "";
           const autorizacion = t?.autorizacion ?? t?.numeroAutorizacion ?? "";
-          const panCrudo = t?.panTarjeta ?? t?.numeroTarjeta ?? "";
+
+          // ✅ PAN: ahora viene como panTarjetaOperacion / panTarjetaIngreso
+          const panCrudo =
+            t?.panTarjetaOperacion ??
+            t?.panTarjetaIngreso ??
+            t?.panTarjeta ??
+            t?.numeroTarjeta ??
+            "";
+
           const pan = this.maskCard(panCrudo);
+
           const divisaOriginal = t?.montoOriginal?.divisa ?? t?.descripcionMonedaOriginal ?? "";
-          const tc = t?.tipoCambio ?? t?.tipoDeCambio ?? "";
+
+          // ✅ tipoCambio puede venir null
+          const tc = (t?.tipoCambio ?? t?.tipoDeCambio);
+          const tcStr = (tc === null || tc === undefined || tc === "") ? "" : String(tc);
+
           const tipoCambio = divisaOriginal && divisaOriginal !== "MXN"
-            ? (tc ? `${divisaOriginal} · TC ${tc}` : `${divisaOriginal}`)
-            : (tc ? `TC ${tc}` : "");
+            ? (tcStr ? `${divisaOriginal} · TC ${tcStr}` : `${divisaOriginal}`)
+            : (tcStr ? `TC ${tcStr}` : "");
 
           const codigoFactura = t?.factura ?? t?.codigoFactura ?? t?.ticket ?? "";
 
@@ -1812,6 +2250,8 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     // index estable para selección
     return out.map((r, i) => ({ ...r, __rowIndex: r.__rowIndex ?? i }));
   }
+
+
 
   /**
    * Dado un movimiento normalizado (row), intenta inferir el "tipo"
@@ -2250,15 +2690,6 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
 
-
-
-
-
-
-
-
-
-
   // ========= Helpers tabla: filtro/paginación =========
   private getFilteredMovs(): Array<any> {
     const rows = (this.state.movimientos ?? []).map((r, i) => ({ ...r, __rowIndex: r.__rowIndex ?? i }));
@@ -2334,6 +2765,50 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     return rows.filter(byText).filter(byCols);
   }
 
+  private getBucFromForm(): string {
+    const v = this.getValueFromFormAttribute("xmsbs_buc"); // tu helper ya existe
+    return (v ?? "").toString().trim();
+  }
+
+  private getCardAccountIdFromProducto(): string {
+    const prod: any = this.state.productoSel ?? {};
+    const raw: any = prod?.raw ?? {};
+
+    const v =
+      prod?.cardAccountId ??
+      raw?.cardAccountId ??
+      raw?.cardAccountID ??
+      raw?.card_account_id ??
+      raw?.cuentaTarjeta?.cardAccountId ??
+      raw?.tarjeta?.cardAccountId ??
+      "";
+
+    return String(v ?? "").trim();
+  }
+
+  private getContractIdFromProducto(): string {
+    const prod: any = this.state.productoSel ?? {};
+    const raw: any = prod?.raw ?? {};
+
+    const v =
+      prod?.contractId ??
+      raw?.contractId ??
+      prod?.contratoId ??          // tu UI actual
+      raw?.numeroContrato ??
+      raw?.contratoId ??
+      "";
+
+    return String(v ?? "").trim();
+  }
+
+  private getTipoTransaccionParaMovs(): number {
+    const cat = this.state.categoria || "";
+    if (cat === "Cuentas") return 2;
+    if (cat === "Tarjeta de crédito" || cat === "Tarjeta de débito") return 1;
+    return 0; // fallback
+  }
+
+
   private getPagedMovs(): { pageRows: any[]; total: number; start: number; end: number; lastPage: number } {
     const filtered = this.getFilteredMovs();
     const { pageIndex, pageSize } = this.state.movTable;
@@ -2348,128 +2823,128 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
   // ========= RENDER movimientos (tabla avanzada) =========
-  // ========= RENDER movimientos (tabla avanzada) =========
   private renderMovimientos(): string {
-    const { movLoading, movError, movimientos } = this.state;
-    if (movLoading) {
-      return `<div class="mov-container"><div class="muted">Cargando movimientos…</div></div>`;
-    }
-    if (movError) {
-      return `<div class="mov-container"><div class="muted">${this.safe(movError)}</div></div>`;
-    }
-    if (!movimientos || movimientos.length === 0) {
-      return `<div class="mov-container"><div class="muted">Sin movimientos para mostrar.</div></div>`;
-    }
+  const { movLoading, movError, movimientos } = this.state;
+  if (movLoading) {
+    return `<div class="mov-container"><div class="muted">Cargando movimientos…</div></div>`;
+  }
+  if (movError) {
+    return `<div class="mov-container"><div class="muted">${this.safe(movError)}</div></div>`;
+  }
+  if (!movimientos || movimientos.length === 0) {
+    return `<div class="mov-container"><div class="muted">Sin movimientos para mostrar.</div></div>`;
+  }
 
-    const { pageRows, total, start, end } = this.getPagedMovs();
-    const allSelectedOnPage = pageRows.every(r => this.state.movTable.selected.has(r.__rowIndex) || r.duplicado);
-    const someSelectedOnPage = !allSelectedOnPage && pageRows.some(r => this.state.movTable.selected.has(r.__rowIndex));
+  const { pageRows, total, start, end } = this.getPagedMovs();
+  const allSelectedOnPage = pageRows.every(r => this.state.movTable.selected.has(r.__rowIndex) || r.duplicado);
+  const someSelectedOnPage = !allSelectedOnPage && pageRows.some(r => this.state.movTable.selected.has(r.__rowIndex));
 
-    return `
-        <div class="mov-container">
-          <div class="section-header">Movimientos</div>
+  return `
+      <div class="mov-container">
+        <div class="section-header">Movimientos</div>
 
-          <!-- Toolbar -->
-          <div class="mov-toolbar">
-            <div class="mov-toolbar-left">
-              <div class="mov-search">
-                <input id="mov-search" class="mov-input" type="text" autocomplete="off" placeholder="Buscar en todos los campos…" value="${this.safe(this.state.movTable.searchText)}" />
-              </div>
-            </div>
-            <div class="mov-toolbar-right">
-              <label class="mov-pagesize-label">Filas por página</label>
-              <select id="mov-page-size" class="mov-select">
-                ${[10,25,50,100].map(ps => `<option value="${ps}" ${this.state.movTable.pageSize===ps?"selected":""}>${ps}</option>`).join("")}
-              </select>
-              <div class="mov-pagination">
-                <button class="mov-page-btn" data-mov-page="first" aria-label="Primera página">«</button>
-                <button class="mov-page-btn" data-mov-page="prev" aria-label="Página anterior">‹</button>
-                <span class="mov-page-status" id="mov-status-top">${start+1}-${end} de ${total}</span>
-                <button class="mov-page-btn" data-mov-page="next" aria-label="Página siguiente">›</button>
-                <button class="mov-page-btn" data-mov-page="last" aria-label="Última página">»</button>
-              </div>
+        <!-- Toolbar -->
+        <div class="mov-toolbar">
+          <div class="mov-toolbar-left">
+            <div class="mov-search">
+              <input id="mov-search" class="mov-input" type="text" autocomplete="off" placeholder="Buscar en todos los campos…" value="${this.safe(this.state.movTable.searchText)}" />
             </div>
           </div>
-
-          <!-- Filtros (2 filas, 5 por fila) -->
-          <div class="mov-filters">
-            <div class="mov-filters-row">
-              <input id="mov-filter-filtroComercio" class="mov-input" type="text" autocomplete="off" placeholder="Comercio / Descripción" value="${this.safe(this.state.movTable.filtroComercio)}" />
-              <input id="mov-filter-filtroReferencia" class="mov-input" type="text" autocomplete="off" placeholder="Referencia" value="${this.safe(this.state.movTable.filtroReferencia)}" />
-              <input id="mov-filter-filtroAutorizacion" class="mov-input" type="text" autocomplete="off" placeholder="Autorización" value="${this.safe(this.state.movTable.filtroAutorizacion)}" />
-              <input id="mov-filter-filtroPan" class="mov-input" type="text" autocomplete="off" placeholder="PAN" value="${this.safe(this.state.movTable.filtroPan)}" />
-              <input id="mov-filter-filtroTipoCambio" class="mov-input" type="text" autocomplete="off" placeholder="Tipo de cambio" value="${this.safe(this.state.movTable.filtroTipoCambio)}" />
-            </div>
-            <div class="mov-filters-row">
-              <div class="mov-filter-range">
-                <label>Fecha desde</label>
-                <input id="mov-filter-fechaDesde" class="mov-input" type="date" value="${this.safe(this.state.movTable.fechaDesde)}" />
-              </div>
-              <div class="mov-filter-range">
-                <label>Fecha hasta</label>
-                <input id="mov-filter-fechaHasta" class="mov-input" type="date" value="${this.safe(this.state.movTable.fechaHasta)}" />
-              </div>
-              <div class="mov-filter-range">
-                <label>Monto mín</label>
-                <input id="mov-filter-montoMin" class="mov-input" type="number" step="0.01" inputmode="decimal" value="${this.safe(this.state.movTable.montoMin)}" />
-              </div>
-              <div class="mov-filter-range">
-                <label>Monto máx</label>
-                <input id="mov-filter-montoMax" class="mov-input" type="number" step="0.01" inputmode="decimal" value="${this.safe(this.state.movTable.montoMax)}" />
-              </div>
-              <div class="mov-filter-range">
-                <label>Duplicados</label>
-                <select id="mov-filter-filtroDuplicados" class="mov-select">
-                  <option value="todos" ${this.state.movTable.filtroDuplicados==='todos'?'selected':''}>Todos</option>
-                  <option value="con" ${this.state.movTable.filtroDuplicados==='con'?'selected':''}>Con aclaración</option>
-                  <option value="sin" ${this.state.movTable.filtroDuplicados==='sin'?'selected':''}>Sin aclaración</option>
-                </select>
-              </div>
+          <div class="mov-toolbar-right">
+            <label class="mov-pagesize-label">Filas por página</label>
+            <select id="mov-page-size" class="mov-select">
+              ${[10,25,50,100].map(ps => `<option value="${ps}" ${this.state.movTable.pageSize===ps?"selected":""}>${ps}</option>`).join("")}
+            </select>
+            <div class="mov-pagination">
+              <button class="mov-page-btn" data-mov-page="first" aria-label="Primera página">«</button>
+              <button class="mov-page-btn" data-mov-page="prev" aria-label="Página anterior">‹</button>
+              <span class="mov-page-status" id="mov-status-top">${start+1}-${end} de ${total}</span>
+              <button class="mov-page-btn" data-mov-page="next" aria-label="Página siguiente">›</button>
+              <button class="mov-page-btn" data-mov-page="last" aria-label="Última página">»</button>
             </div>
           </div>
-
-          <!-- Tabla -->
-          <div class="mov-table-wrapper">
-            <table class="mov-table" role="table" aria-label="Tabla de movimientos">
-              <thead>
-                <tr role="row">
-                  <th class="sel-col" role="columnheader" aria-label="seleccionar">
-                    <fluent-checkbox id="mov-select-all" disabled></fluent-checkbox>
-                  </th>
-                  <th role="columnheader">Comercio / Descripción</th>
-                  <th role="columnheader">Importe</th>
-                  <th role="columnheader">Fecha y hora de la operación</th>
-                  <th role="columnheader">Número de referencia</th>
-                  <th role="columnheader">Número de autorización</th>
-                  <th role="columnheader">PAN de la tarjeta</th>
-                  <th role="columnheader">Factura</th>
-                  <th role="columnheader">Tipo de cambio</th>
-                  <th role="columnheader">Duplicado</th>
-                </tr>
-              </thead>
-              <tbody id="mov-tbody">
-                ${this.buildMovTbodyRows(pageRows)}
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Paginación inferior -->
-          <div class="mov-toolbar mov-toolbar-bottom">
-            <div class="mov-toolbar-right">
-              <div class="mov-pagination">
-                <button class="mov-page-btn" data-mov-page="first" aria-label="Primera página">«</button>
-                <button class="mov-page-btn" data-mov-page="prev" aria-label="Página anterior">‹</button>
-                <span class="mov-page-status" id="mov-status-bottom">${start+1}-${end} de ${total}</span>
-                <button class="mov-page-btn" data-mov-page="next" aria-label="Página siguiente">›</button>
-                <button class="mov-page-btn" data-mov-page="last" aria-label="Última página">»</button>
-              </div>
-            </div>
-          </div>
-
-          ${this.renderMovimientosExtras()}
         </div>
-      `;
-}
+
+        <!-- Filtros (2 filas, 5 por fila) -->
+        <div class="mov-filters">
+          <div class="mov-filters-row">
+            <input id="mov-filter-filtroComercio" class="mov-input" type="text" autocomplete="off" placeholder="Comercio / Descripción" value="${this.safe(this.state.movTable.filtroComercio)}" />
+            <input id="mov-filter-filtroReferencia" class="mov-input" type="text" autocomplete="off" placeholder="Referencia" value="${this.safe(this.state.movTable.filtroReferencia)}" />
+            <input id="mov-filter-filtroAutorizacion" class="mov-input" type="text" autocomplete="off" placeholder="Autorización" value="${this.safe(this.state.movTable.filtroAutorizacion)}" />
+            <input id="mov-filter-filtroPan" class="mov-input" type="text" autocomplete="off" placeholder="PAN" value="${this.safe(this.state.movTable.filtroPan)}" />
+            <input id="mov-filter-filtroTipoCambio" class="mov-input" type="text" autocomplete="off" placeholder="Tipo de cambio" value="${this.safe(this.state.movTable.filtroTipoCambio)}" />
+          </div>
+          <div class="mov-filters-row">
+            <div class="mov-filter-range">
+              <label>Fecha desde</label>
+              <input id="mov-filter-fechaDesde" class="mov-input" type="date" value="${this.safe(this.state.movTable.fechaDesde)}" />
+            </div>
+            <div class="mov-filter-range">
+              <label>Fecha hasta</label>
+              <input id="mov-filter-fechaHasta" class="mov-input" type="date" value="${this.safe(this.state.movTable.fechaHasta)}" />
+            </div>
+            <div class="mov-filter-range">
+              <label>Monto mín</label>
+              <input id="mov-filter-montoMin" class="mov-input" type="number" step="0.01" inputmode="decimal" value="${this.safe(this.state.movTable.montoMin)}" />
+            </div>
+            <div class="mov-filter-range">
+              <label>Monto máx</label>
+              <input id="mov-filter-montoMax" class="mov-input" type="number" step="0.01" inputmode="decimal" value="${this.safe(this.state.movTable.montoMax)}" />
+            </div>
+            <div class="mov-filter-range">
+              <label>Duplicados</label>
+              <select id="mov-filter-filtroDuplicados" class="mov-select">
+                <option value="todos" ${this.state.movTable.filtroDuplicados==='todos'?'selected':''}>Todos</option>
+                <option value="con" ${this.state.movTable.filtroDuplicados==='con'?'selected':''}>Con aclaración</option>
+                <option value="sin" ${this.state.movTable.filtroDuplicados==='sin'?'selected':''}>Sin aclaración</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabla -->
+        <div class="mov-table-wrapper">
+          <table class="mov-table" role="table" aria-label="Tabla de movimientos">
+            <thead>
+              <tr role="row">
+                <th class="sel-col" role="columnheader" aria-label="seleccionar">
+                  <fluent-checkbox id="mov-select-all" disabled></fluent-checkbox>
+                </th>
+                <th role="columnheader">Comercio / Descripción</th>
+                <th role="columnheader">Importe</th>
+                <th role="columnheader">Fecha y hora de la operación</th>
+                <th role="columnheader">Número de referencia</th>
+                <th role="columnheader">Número de autorización</th>
+                <th role="columnheader">PAN de la tarjeta</th>
+                <th role="columnheader">Factura</th>
+                <th role="columnheader">Tipo de cambio</th>
+                <th role="columnheader">Duplicado</th>
+              </tr>
+            </thead>
+            <tbody id="mov-tbody">
+              ${this.buildMovTbodyRows(pageRows)}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Paginación inferior -->
+        <div class="mov-toolbar mov-toolbar-bottom">
+          <div class="mov-toolbar-right">
+            <div class="mov-pagination">
+              <button class="mov-page-btn" data-mov-page="first" aria-label="Primera página">«</button>
+              <button class="mov-page-btn" data-mov-page="prev" aria-label="Página anterior">‹</button>
+              <span class="mov-page-status" id="mov-status-bottom">${start+1}-${end} de ${total}</span>
+              <button class="mov-page-btn" data-mov-page="next" aria-label="Página siguiente">›</button>
+              <button class="mov-page-btn" data-mov-page="last" aria-label="Última página">»</button>
+            </div>
+          </div>
+        </div>
+
+        ${this.renderMovimientosExtras()}
+      </div>
+    `;
+  }
+
 
 
 
@@ -2479,7 +2954,6 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     const p1List = this.state.movP1Opciones ?? [];
     const p2List = this.state.movP2Opciones ?? [];
 
-    // Si no hay tipo o no hay nada que mostrar, salimos
     if (!tipo && (!p1List.length && !p2List.length)) return "";
 
     const selectedP1 = p1List.find(m => m.id === this.state.movP1SelId) || null;
@@ -2490,45 +2964,51 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
     if (!showP1 && !showP2) return "";
 
-    const p1Html = showP1
-      ? `
-        <div class="mov-extra-row">
-          <label class="question-label" id="lblP1Mov">¿P1 Movimiento?</label>
-          <div class="question-value">
-            <select id="mov-p1-select" class="mov-select">
-              <option value="">-- Selecciona P1 movimiento --</option>
-              ${p1List
-                .map(
-                  (m) => `
-                    <option value="${this.safe(m.id)}" ${this.state.movP1SelId === m.id ? "selected" : ""}>
-                      ${this.safe(m.name)}
-                    </option>`
-                )
-                .join("")}
-            </select>
-          </div>
-        </div>`
-      : "";
+    const filler = `<div class="mov-extra-filler" aria-hidden="true"></div>`;
 
-    const p2Html = showP2
-      ? `
-        <div class="mov-extra-row">
-          <label class="question-label" id="lblP2Mov">¿P2 Movimiento?</label>
-          <div class="question-value">
-            <select id="mov-p2-select" class="mov-select">
-              <option value="">-- Selecciona P2 movimiento --</option>
-              ${p2List
-                .map(
-                  (m) => `
-                    <option value="${this.safe(m.id)}" ${this.state.movP2SelId === m.id ? "selected" : ""}>
-                      ${this.safe(m.name)}
-                    </option>`
-                )
-                .join("")}
-            </select>
-          </div>
-        </div>`
-      : "";
+    const p1Html = showP1 ? `
+      <div class="mov-extra-row">
+        <label class="question-label" id="lblP1Mov">¿P1 Movimiento?</label>
+        <div class="question-value">
+          <fluent-combobox
+            id="mov-p1-select"
+            class="field-label outline mov-question-combobox"
+            placeholder="-- Selecciona P1 movimiento --"
+            aria-labelledby="lblP1Mov"
+            autocomplete="off">
+            <fluent-option value="">-- Selecciona P1 movimiento --</fluent-option>
+            ${p1List.map(m => `
+              <fluent-option value="${this.safe(m.id)}" ${this.state.movP1SelId === m.id ? "selected" : ""}>
+                ${this.safe(m.name)}
+              </fluent-option>
+            `).join("")}
+          </fluent-combobox>
+        </div>
+        ${filler}
+      </div>
+    ` : "";
+
+    const p2Html = showP2 ? `
+      <div class="mov-extra-row">
+        <label class="question-label" id="lblP2Mov">¿P2 Movimiento?</label>
+        <div class="question-value">
+          <fluent-combobox
+            id="mov-p2-select"
+            class="field-label outline mov-question-combobox"
+            placeholder="-- Selecciona P2 movimiento --"
+            aria-labelledby="lblP2Mov"
+            autocomplete="off">
+            <fluent-option value="">-- Selecciona P2 movimiento --</fluent-option>
+            ${p2List.map(m => `
+              <fluent-option value="${this.safe(m.id)}" ${this.state.movP2SelId === m.id ? "selected" : ""}>
+                ${this.safe(m.name)}
+              </fluent-option>
+            `).join("")}
+          </fluent-combobox>
+        </div>
+        ${filler}
+      </div>
+    ` : "";
 
     return `
       <div class="mov-extra-container">
@@ -2537,6 +3017,10 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       </div>
     `;
   }
+
+
+
+
 
 
   private buildMovTbodyRows(rows: any[]): string {
@@ -2609,18 +3093,28 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
   // ========= RELLENO LOOKUPS EN FORM =========
+  // ========= RELLENO LOOKUPS EN FORM =========
   private setFormLookup(logicalName: string, id: string, name: string, entityType: string) {
     try {
+      const cleanId = this.cleanGuid(id);
+      if (!cleanId) return;
+
+      // ✅ Si ya está seteado el mismo ID, NO tocamos nada (evita dirty + saves repetidos)
+      const currentId = this.getLookupIdFromFormAttribute(logicalName);
+      if (currentId && currentId === cleanId) return;
+
       const XrmAny = (window as any).Xrm;
       const ctx = XrmAny?.Page ?? XrmAny?.getFormContext?.();
       const attr = ctx?.getAttribute?.(logicalName);
       if (!attr?.setValue) return;
-      attr.setValue([{ id: `{${id.replace(/[{}]/g,"")}}`, name: name || "", entityType }]);
+
+      attr.setValue([{ id: `{${cleanId}}`, name: name || "", entityType }]);
       attr.fireOnChange?.();
     } catch (e) {
       console.warn("No se pudo setear lookup", logicalName, e);
     }
   }
+
 
   private async retrieveOne(entity: string, select: string, filter: string): Promise<any|null> {
     const api = this.getApi();
@@ -2823,20 +3317,27 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
   // ========= CREAR xmsbs_contrato RELACIONADO (helper de guardado) =========
 
-  private async saveCaseNow(): Promise<void> {
+  private async saveCaseIfDirty(): Promise<void> {
     try {
       const XrmAny = (window as any).Xrm;
       const ctx = XrmAny?.Page ?? XrmAny?.getFormContext?.();
+
+      // ✅ Si no está dirty, NO guardamos (corta el “guardar a cada rato”)
+      const dirty = ctx?.data?.entity?.getIsDirty?.();
+      if (dirty === false) return;
+
       const saveFn =
         ctx?.data?.save?.bind(ctx?.data) ??
         XrmAny?.getFormContext?.()?.data?.save?.bind(XrmAny?.getFormContext?.()?.data);
+
       if (typeof saveFn === "function") {
         await saveFn();
       }
     } catch (e) {
-      console.warn("[PCF] No se pudo guardar el Caso antes de crear contrato:", e);
+      console.warn("[PCF] No se pudo guardar el Caso:", e);
     }
   }
+
 
   private getCurrentCaseId(): string | null {
     try {
@@ -2870,31 +3371,93 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
   // IMPORTANTE: omitir fechas/campos nulos. Ya devolvemos undefined cuando algo no parsea.
+  // IMPORTANTE: omitir fechas/campos nulos. Ya devolvemos undefined cuando algo no parsea.
   private buildContratoPayloadFromProducto(prod: any): Record<string, any> {
     const raw = prod?.raw ?? {};
     const tipo: string = prod?.tipo ?? "";
 
+    // helper: intenta sacar int desde option {codigo, codigoInt} o valor simple
+    const optToInt = (o: any): number | undefined => {
+      if (o === null || o === undefined || o === "") return undefined;
+
+      // prioridad: codigo (si es numérico), luego codigoInt
+      const v1 = o?.codigo;
+      if (v1 != null && v1 !== "" && isFinite(Number(v1))) return this.toWhole(Number(v1));
+
+      const v2 = o?.codigoInt;
+      if (v2 != null && v2 !== "" && isFinite(Number(v2))) return this.toWhole(Number(v2));
+
+      // si llega directo como number/string numérico
+      if (isFinite(Number(o))) return this.toWhole(Number(o));
+
+      return undefined;
+    };
+
+    const productoCodigo = raw?.producto?.codigo ?? undefined;
+    const productoDesc = raw?.producto?.descripcion ?? undefined;
+
+    const subproductoCodigo = raw?.subproducto?.codigo ?? undefined;
+
+    const refName =
+      raw?.numeroContrato ??
+      raw?.numeroPoliza ??
+      prod?.contratoId ??
+      prod?.productoId ??
+      "";
+
     const base: Record<string, any> = {
-      xmsbs_name: `${tipo} · ${prod?.contratoId ?? prod?.productoId ?? ""}`.trim(),
+      // xmsbs_name en tu tabla es “Número contrato / cuenta”
+      xmsbs_name: `${tipo ? tipo + " · " : ""}${refName}`.trim(),
+
       xmsbs_centroalta: this.toWhole(raw?.centroAlta),
       xmsbs_clabe: this.toWhole(raw?.clabe),
-      xmsbs_codigoproductosubproducto: (raw?.producto?.codigo && raw?.subproducto?.codigo)
-        ? `${raw.producto.codigo}-${raw.subproducto.codigo}` : undefined,
-      xmsbs_producto: raw?.producto?.descripcion ? undefined : raw?.producto?.codigo,
-      xmsbs_productodescripcion: raw?.producto?.descripcion,
-      xmsbs_subproducto: raw?.subproducto?.codigo,
+
+      xmsbs_codigoproductosubproducto:
+        (raw?.producto?.codigo && raw?.subproducto?.codigo)
+          ? `${raw.producto.codigo}-${raw.subproducto.codigo}`
+          : undefined,
+
+      // ✅ FIX: antes lo dejabas en undefined si venía descripción. Ahora guardamos el código siempre que exista.
+      xmsbs_producto: (productoCodigo ?? productoDesc) || undefined,
+      xmsbs_productodescripcion: productoDesc,
+
+      xmsbs_subproducto: subproductoCodigo,
+
       xmsbs_saldodisponible: this.toCurrency(raw?.saldoDisponible?.monto),
+
       xmsbs_fechaaltacontrato: this.toDateIso(raw?.fechaAltaContrato),
+
+      // Estatus “genérico” (tarjeta/crédito/inversión/seguro). Mantengo tu lógica.
       xmsbs_estatus: this.toWhole(
         raw?.estatusTarjeta?.codigoInt ??
         raw?.estatusCredito?.codigoInt ??
         raw?.estadoInversion?.codigoInt ??
         raw?.estadoSeguro?.codigoInt
       ),
+
       xmsbs_tipotasa: raw?.tipoTasa || undefined,
       xmsbs_restricciones: raw?.restricciones || undefined,
     };
 
+    // Campos que pueden venir en varios tipos (si existen, se guardan)
+    // ✅ NEW: produtoM.descripcion → xmsbs_productomdescripcion
+    const prodM = raw?.produtoM ?? raw?.productoM ?? raw?.productom ?? null;
+    if (prodM?.descripcion) base["xmsbs_productomdescripcion"] = String(prodM.descripcion);
+
+    // ✅ NEW: nombreOrdenante → xmsbs_nombreordenante
+    if (raw?.nombreOrdenante) base["xmsbs_nombreordenante"] = String(raw.nombreOrdenante);
+
+    // ✅ NEW: numeroContratoPanOperacion → xmsbs_numerocontratopanoperacion
+    if (raw?.numeroContratoPanOperacion) {
+      base["xmsbs_numerocontratopanoperacion"] = String(raw.numeroContratoPanOperacion);
+    }
+
+    // IndicadorParticipacion (ya lo tenías, lo dejo robusto)
+    if (raw?.indicadorParticipacion?.descripcion) {
+      base["xmsbs_indicadorparticipacion"] = String(raw.indicadorParticipacion.descripcion);
+    }
+
+    // Tipos específicos
     if (tipo === "Tarjeta de Crédito") {
       Object.assign(base, {
         xmsbs_limitecredito: this.toCurrency(raw?.limiteCredito?.monto),
@@ -2905,11 +3468,15 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
         xmsbs_fechabloqueo: this.toDateIso(raw?.fechaBloqueo),
         xmsbs_fechaactivaciontarjeta: this.toDateIso(raw?.fechaActivacionTarjeta),
         xmsbs_fechavencimiento: this.fromYearMonth(raw?.fechaVencimientoYear, raw?.fechaVencimientoMonth),
-        xmsbs_tipobloqueo: this.toWhole(raw?.tipoBloqueo?.codigoInt),
-        xmsbs_tipotarjeta: this.toWhole(raw?.tipoTarjeta?.codigoInt),
-        xmsbs_indicadormarca: this.toWhole(raw?.indicadorMarca?.codigoInt),
-        xmsbs_indicadorparticipacion: raw?.indicadorParticipacion?.descripcion || undefined,
+
+        xmsbs_tipobloqueo: optToInt(raw?.tipoBloqueo),
+        xmsbs_tipotarjeta: optToInt(raw?.tipoTarjeta),
+        xmsbs_indicadormarca: optToInt(raw?.indicadorMarca),
+
+        // tabla: “Número de tarjeta” int (guardas últimos dígitos)
         xmsbs_numerotarjeta: this.safeLastDigitsAsWhole(raw?.numeroTarjeta, 8),
+
+        // tú lo venías usando como “número contrato” en tarjetas; lo dejo.
         xmsbs_numerocredito: this.safeLastDigitsAsWhole(raw?.numeroContrato, 8),
       });
     } else if (tipo === "Tarjeta de Débito") {
@@ -2917,51 +3484,83 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
         xmsbs_fechabloqueo: this.toDateIso(raw?.fechaBloqueo),
         xmsbs_fechaactivaciontarjeta: this.toDateIso(raw?.fechaActivacionTarjeta),
         xmsbs_fechavencimiento: this.fromYearMonth(raw?.fechaVencimientoYear, raw?.fechaVencimientoMonth),
-        xmsbs_tipobloqueo: this.toWhole(raw?.tipoBloqueo?.codigoInt),
-        xmsbs_tipotarjeta: this.toWhole(raw?.tipoTarjeta?.codigoInt),
-        xmsbs_indicadormarca: this.toWhole(raw?.indicadorMarca?.codigoInt),
-        xmsbs_indicadorparticipacion: raw?.indicadorParticipacion?.descripcion || undefined,
+
+        xmsbs_tipobloqueo: optToInt(raw?.tipoBloqueo),
+        xmsbs_tipotarjeta: optToInt(raw?.tipoTarjeta),
+        xmsbs_indicadormarca: optToInt(raw?.indicadorMarca),
+
         xmsbs_numerotarjeta: this.safeLastDigitsAsWhole(raw?.numeroTarjeta, 8),
         xmsbs_numerocredito: this.safeLastDigitsAsWhole(raw?.numeroContrato, 8),
       });
     } else if (tipo === "Cuenta") {
-      Object.assign(base, {});
+      // en tu JSON de ejemplo no viene tipoBloqueo, pero la tabla dice que aplica → lo dejamos “si viene”
+      Object.assign(base, {
+        xmsbs_tipobloqueo: optToInt(raw?.tipoBloqueo),
+      });
     } else if (tipo === "Crédito") {
       Object.assign(base, {
         xmsbs_fechacorte: this.toDateIso(raw?.fechaCorte),
         xmsbs_fechapago: this.toDateIso(raw?.fechaPago),
         xmsbs_fechavencimiento: this.toDateIso(raw?.fechaVencimiento),
+
         xmsbs_montoapagartotal: this.toCurrency(raw?.montoPagarTotal?.monto),
         xmsbs_saldoinsoluto: this.toCurrency(raw?.saldoInsoluto?.monto),
         xmsbs_montooriginal: this.toCurrency(raw?.montoOriginal?.monto),
+
         xmsbs_plazo: this.toWhole(raw?.plazo?.monto),
         xmsbs_pagomensual: this.toCurrency(raw?.montoPagoMensual?.monto),
         xmsbs_tasainteres: this.percentToWhole(raw?.tasaInteres),
-        xmsbs_estatuscreditos: this.toWhole(raw?.estatusCredito?.codigoInt),
-        xmsbs_numerocredito: this.safeLastDigitsAsWhole(raw?.numeroContrato, 8),
+
+        xmsbs_estatuscreditos: optToInt(raw?.estatusCredito),
+
+        // ✅ tabla: “Número de cuenta ligado al crédito”
+        xmsbs_numerocredito: this.safeLastDigitsAsWhole(raw?.numeroCuentaLigadoCredito ?? raw?.numeroContrato, 8),
+
+        // ✅ NEW (tabla): canalContratacion (créditos también)
+        xmsbs_canalcontratacion: optToInt(raw?.canalContratacion),
       });
-    } else if (tipo === "Inversión") {
+    } else if (tipo === "Inversión" || tipo === "Inversión Plazo") {
       Object.assign(base, {
         xmsbs_montoinvertido: this.toCurrency(raw?.montoInvertido?.monto),
         xmsbs_rendimientoestimado: this.percentToWhole(raw?.rendimientoEstimadoTasaContratada),
-        xmsbs_estadoactualinversion: this.toWhole(raw?.estadoInversion?.codigoInt),
+
+        // ✅ soporte nuevo y viejo (lo dejaste bien)
+        xmsbs_estadoactualinversion: this.toWhole(
+          raw?.estatusInversion?.codigoInt ??
+          raw?.estatusInversionPlazo?.codigoInt ??
+          raw?.estadoInversion?.codigoInt
+        ),
+
+        xmsbs_tipotasa: raw?.tipoTasa || undefined,
+
+        // ✅ NEW (tabla): canalContratacion (inversiones también)
+        xmsbs_canalcontratacion: optToInt(raw?.canalContratacion),
       });
     } else if (tipo === "Seguro") {
       Object.assign(base, {
         xmsbs_poliza: raw?.numeroPoliza || undefined,
-        xmsbs_canalcontratacion: this.toWhole(raw?.canalContratacion?.codigoInt),
-        xmsbs_ramo: this.toWhole(raw?.ramo?.codigoInt),
-        xmsbs_estadoactualseguros: this.toWhole(raw?.estadoSeguro?.codigoInt),
+
+        // ✅ NEW: ramo entero desde ramo.codigo (ej "01" → 1). Fallback a codigoInt.
+        xmsbs_ramo: optToInt(raw?.ramo),
+        xmsbs_ramodescripcion: raw?.ramo?.descripcion || undefined,
+
+        // ✅ NEW: canalContratacion (ya lo tenías, lo dejo con helper)
+        xmsbs_canalcontratacion: optToInt(raw?.canalContratacion),
+
+        xmsbs_estadoactualseguros: optToInt(raw?.estadoSeguro),
         xmsbs_fechavencimiento: this.toDateIso(raw?.fechaVencimiento),
       });
     }
 
+    // Limpieza final: no mandar undefined/null/""
     const payload: Record<string, any> = {};
     Object.entries(base).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") payload[k] = v;
     });
+
     return payload;
   }
+
 
   // ========= NUEVO: construir payload de xmsbs_movimiento desde __raw y categoría =========
   private construirPayloadMovimientoDesdeRaw(rawMov: any, categoria: string): Record<string, any> {
@@ -2990,11 +3589,23 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
     if (rawMov?.indicadorCargoAbono) p["xmsbs_indicadorcargoabono"] = String(rawMov.indicadorCargoAbono);
 
-    const panIngreso = rawMov?.numeroTarjeta ?? rawMov?.panTarjeta;
+    const panIngreso =
+      rawMov?.panTarjetaIngreso ??
+      rawMov?.numeroTarjeta ??
+      rawMov?.panTarjeta ??
+      "";
+
     if (panIngreso) p["xmsbs_pandelatarjetaingreso"] = String(panIngreso);
 
-    const panOperacion = rawMov?.panOperacion ?? rawMov?.panTransaccion ?? rawMov?.panTarjeta;
+    const panOperacion =
+      rawMov?.panTarjetaOperacion ??
+      rawMov?.panOperacion ??
+      rawMov?.panTransaccion ??
+      rawMov?.panTarjeta ??
+      "";
+
     if (panOperacion) p["xmsbs_pandelatarjetaoperacion"] = String(panOperacion);
+
 
     const descOp = rawMov?.descripcionOperacion ?? rawMov?.nombreComercio ?? rawMov?.comercio;
     if (descOp) p["xmsbs_descripciondelaoperacion"] = String(descOp);
@@ -3015,7 +3626,8 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     const isCTA = categoria === "Cuentas";
 
     if (isTDC) {
-      if (rawMov?.afiliacion) p["xmsbs_afiliacion"] = String(rawMov.afiliacion);
+      const afiliacion = rawMov?.afiliacion ?? rawMov?.afilacion;
+      if (afiliacion) p["xmsbs_afiliacion"] = String(afiliacion);
       if (rawMov?.canalOperacion) p["xmsbs_canaldeoperacion"] = String(rawMov.canalOperacion);
       if (rawMov?.claveTransaccion) p["xmsbs_clavedetransaccion"] = String(rawMov.claveTransaccion);
       if (rawMov?.factura) p["xmsbs_factura"] = String(rawMov.factura);
@@ -3034,7 +3646,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       if (rawMov?.tokenPY) p["xmsbs_tokenpy"] = String(rawMov.tokenPY);
       if (rawMov?.tokenQ2) p["xmsbs_tokenq2"] = String(rawMov.tokenQ2);
       if (rawMov?.tokenCO) p["xmsbs_tokenco"] = String(rawMov.tokenCO);
-      if (rawMov?.productoM) p["xmsbs_productom"] = String(rawMov.productoM);
+      const prodM = rawMov?.productoM ?? rawMov?.produtoM;
+      if (prodM) {
+        // si viene como objeto {codigo, descripcion...} guardamos algo útil
+        p["xmsbs_productom"] = typeof prodM === "object"
+          ? (prodM?.codigo ?? prodM?.descripcion ?? JSON.stringify(prodM))
+          : String(prodM);
+      }
+
       if (rawMov?.indicadorComercioSeguro != null) p["xmsbs_indicadordecomercioseguro"] = this.toWhole(rawMov.indicadorComercioSeguro);
     }
 
@@ -3069,7 +3688,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       if (rawMov?.indicadorCargoAbono) p["xmsbs_indicadorcargoabono"] = String(rawMov.indicadorCargoAbono);
       if (rawMov?.nombreBeneficiario) p["xmsbs_nombrebeneficiario"] = String(rawMov.nombreBeneficiario);
       if (rawMov?.nombreOrdenante) p["xmsbs_nombreordenante"] = String(rawMov.nombreOrdenante);
-      if (rawMov?.numeroContratoIngreso) p["xmsbs_numerocontratotarjetaqueingresa"] = String(rawMov.numeroContratoIngreso);
+      const nContratoIngresa =
+        rawMov?.numeroContratoIngreso ??
+        rawMov?.numeroContratoTarjetaIngresa ??
+        rawMov?.numeroContratoTarjetaQueIngresa ??
+        "";
+
+      if (nContratoIngresa) p["xmsbs_numerocontratotarjetaqueingresa"] = String(nContratoIngresa);
+
     }
 
     const payload: Record<string, any> = {};
@@ -3086,7 +3712,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     }
 
     await this.rellenarLookupsCaso();
-    await this.saveCaseNow();
+    await this.saveCaseIfDirty();
 
     const caseId = this.getCurrentCaseId();
     if (!caseId) {
@@ -3202,6 +3828,14 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     this.state.loading = val;
     this.container.classList.toggle("loading", val);
 
+    // ✅ Si el caso ya está "cerrado", no planificamos autosave nunca.
+    // (bloquea el flujo de guardados repetidos cuando ya viene todo listo)
+    if (this.isCasoCerrado()) {
+      this.autoSaveDone = true;            // lo damos por “hecho”
+      this.shouldAutoSaveAfterPersona = false;
+      return;
+    }
+
     // Solo planificamos el autosave si:
     // - veníamos de un estado "loading"
     // - ya terminó la carga (!val)
@@ -3212,6 +3846,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       this.planAutoSave().catch(console.error);
     }
   }
+
 
 
   private async planAutoSave() {
@@ -3233,6 +3868,8 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       ["xmsbs_firstname", () => this.outFirstName],
       ["xmsbs_middlename", () => this.outMiddleName],
       ["xmsbs_lastname", () => this.outLastName],
+      ["xmsbs_rfc", () => this.outRfc],
+      ["xmsbs_curp", () => this.outCurp],
     ];
     const equals = (a?: string | null, b?: string | null) =>
       (a ?? "").toString().trim() === (b ?? "").toString().trim();
@@ -3254,10 +3891,45 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
   }
 
   private async guardarCasoActual(): Promise<void> {
+    // ✅ Guardas 1 sola vez (y listo)
     if (!this.apiStarted || this.autoSaveDone) return;
 
+    // ✅ ESCENARIO CLAVE: reingreso
+    // ✅ Reingreso REAL: si ya venía json_persona al entrar al Caso → NO autosave nunca
+    if (this.initialHasJsonPersona) {
+      this.autoSaveDone = true;
+      this.shouldAutoSaveAfterPersona = false;
+      return;
+    }
+
+
+    // ✅ Si no hay intención de autosave, salimos
+    if (!this.shouldAutoSaveAfterPersona) {
+      this.autoSaveDone = true;
+      return;
+    }
+
+    // 1) avisamos outputs (esto puede hidratar campos en el form)
     this.notifyOutputChanged?.();
     await this.delay(150);
+
+    // 2) esperamos hidratación
+    try {
+      await this.waitForHydration(5000, 200);
+    } catch {}
+
+    // ✅ Re-check: si luego de hidratar quedamos en “reingreso sin cambios”, cortamos
+    if (this.isReingresoSinCambiosPorJsonPersona()) {
+      this.autoSaveDone = true;
+      this.shouldAutoSaveAfterPersona = false;
+      return;
+    }
+
+    // ✅ Si NO quedó dirty, no guardamos.
+    if (!this.isFormDirty()) {
+      this.autoSaveDone = true;
+      return;
+    }
 
     try {
       this.showGlobalProgress();
@@ -3273,7 +3945,7 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
       await saveFn();
       this.autoSaveDone = true;
-      console.log("[PCF] Caso guardado automáticamente tras obtener datos de la API.");
+      console.log("[PCF] Caso guardado automáticamente tras obtener datos de la API (solo si había cambios).");
     } catch (err) {
       console.error("[PCF] Error al guardar el caso:", err);
     } finally {
@@ -3281,12 +3953,20 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     }
   }
 
+
+
   private async refreshCurrentForm(caseId: string) {
     try {
       const XrmAny = (window as any).Xrm;
       const ctx = XrmAny?.Page ?? XrmAny?.getFormContext?.();
 
-      await (ctx?.data?.save?.() ?? Promise.resolve());
+      try {
+        const dirty = ctx?.data?.entity?.getIsDirty?.();
+        if (dirty) await (ctx?.data?.save?.() ?? Promise.resolve());
+      } catch {
+        await (ctx?.data?.save?.() ?? Promise.resolve());
+      }
+
       if (ctx?.data?.refresh) await ctx.data.refresh(false);
       if (XrmAny?.Navigation?.openForm) {
         await XrmAny.Navigation.openForm({ entityName: "incident", entityId: caseId });
@@ -3323,6 +4003,41 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       return null;
     }
   }
+
+  private getLookupIdFromFormAttribute(logicalName: string): string | null {
+    try {
+      const XrmAny = (window as any).Xrm;
+      const ctx = XrmAny?.Page ?? XrmAny?.getFormContext?.();
+      const attr = ctx?.getAttribute?.(logicalName);
+      const v = attr?.getValue?.();
+      const first = Array.isArray(v) ? v[0] : null;
+      const id = first?.id ?? null;
+      return id ? this.cleanGuid(id) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isFormDirty(): boolean {
+    try {
+      const XrmAny = (window as any).Xrm;
+      const ctx = XrmAny?.Page ?? XrmAny?.getFormContext?.();
+      const dirty = ctx?.data?.entity?.getIsDirty?.();
+      return !!dirty;
+    } catch {
+      return true; // por seguridad: si no puedo saber, asumo que sí puede requerir guardado
+    }
+  }
+
+  /**
+   * ✅ "Caso cerrado": ya tiene jsonPersona + lookups clave completos.
+   * Ajusta los campos si tu definición de "cerrado" es otra, pero esta cubre lo que me mencionaste.
+   */
+  private isCasoCerrado(): boolean {
+    // ✅ Para tu definición actual: caso “cerrado” = jsonPersona + 4 lookups coinciden con el JSON
+    return this.isReingresoSinCambiosPorJsonPersona();
+  }
+
 
   private setBound(prop: string, value: any) {
     const self: any = this as any;
@@ -3476,6 +4191,111 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
     return (id ?? "").toString().trim().replace(/[{}]/g, "").toLowerCase();
   }
 
+  // ========= PERFIL USUARIO (systemuser.xmsbs_perfil) =========
+  private async ensureUserPerfilLoaded(): Promise<void> {
+    if (this.userPerfilLoaded) return;
+
+    try {
+      const api = this.getApi();
+      if (!api?.retrieveMultipleRecords) {
+        console.warn("[PCF][Perfil] WebApi no disponible.");
+        this.userPerfilLoaded = true;
+        return;
+      }
+
+      // Obtenemos el userId del usuario conectado
+      const XrmAny = (window as any).Xrm;
+      const userIdRaw =
+        XrmAny?.Utility?.getGlobalContext?.()?.userSettings?.userId ??
+        XrmAny?.Page?.context?.getUserId?.() ??
+        null;
+
+      const userId = this.cleanGuid(userIdRaw);
+      if (!userId) {
+        console.warn("[PCF][Perfil] No pude obtener userId.");
+        this.userPerfilLoaded = true;
+        return;
+      }
+
+      // Traemos el perfil del systemuser
+      const u = await this.retrieveOne(
+        "systemuser",
+        "systemuserid,xmsbs_perfil",
+        `systemuserid eq ${userId}`
+      );
+
+      // OptionSet en systemuser (single): típicamente es number
+      const perfilVal = u?.xmsbs_perfil;
+      this.userPerfilValue = (perfilVal === null || perfilVal === undefined || perfilVal === "")
+        ? null
+        : Number(perfilVal);
+
+      // FormattedValue (si está disponible)
+      this.userPerfilLabel = u?.["xmsbs_perfil@OData.Community.Display.V1.FormattedValue"] ?? "";
+
+      this.userPerfilLoaded = true;
+
+      console.log("[PCF][Perfil] Perfil usuario cargado:", {
+        value: this.userPerfilValue,
+        label: this.userPerfilLabel
+      });
+
+    } catch (e) {
+      console.log("[PCF][Perfil] Error cargando perfil usuario:", e);
+      // Marcamos como cargado para no reintentar infinitamente
+      this.userPerfilLoaded = true;
+    }
+  }
+
+  /**
+   * MultiSelect OptionSet puede venir como:
+   * - number[]
+   * - string "100000000,100000001" (o con ';')
+   * - number (raro pero posible)
+   */
+  private parseMultiSelectOptionSet(v: any): number[] {
+    if (v === null || v === undefined) return [];
+
+    if (Array.isArray(v)) {
+      return v
+        .map(x => Number(x))
+        .filter(n => isFinite(n));
+    }
+
+    if (typeof v === "number") {
+      return isFinite(v) ? [v] : [];
+    }
+
+    const s = String(v).trim();
+    if (!s) return [];
+
+    // soporta coma o punto y coma
+    return s
+      .split(/[;,]/g)
+      .map(x => Number(String(x).trim()))
+      .filter(n => isFinite(n));
+  }
+
+  /**
+   * Regla:
+   * - Si la Pregunta1 NO tiene perfiles configurados => visible para todos (modo "global").
+   * - Si SÍ tiene perfiles => visible solo si incluye el perfil del usuario.
+   *
+   * Si quieres modo estricto (sin perfil usuario => no ve nada), te digo dónde cambiarlo.
+   */
+  private pregunta1VisibleParaPerfilUsuario(perfilesPregunta: number[]): boolean {
+    // Sin perfiles en la pregunta => visible (pregunta "global")
+    if (!perfilesPregunta || perfilesPregunta.length === 0) return true;
+
+    // Si no pude leer perfil del usuario => NO filtramos (para no bloquear operación).
+    // Si lo quieres estricto, cambia esto a `return false;`
+    if (this.userPerfilValue === null || this.userPerfilValue === undefined || !isFinite(this.userPerfilValue)) {
+      return false;
+    }
+    return perfilesPregunta.includes(this.userPerfilValue);
+  }
+
+
   private getFluentSelectedValue(el: any): string | null {
     try {
       const so = el?.selectedOptions;
@@ -3501,6 +4321,8 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
       outAntiguedad: this.outAntiguedad,
       outEmail: this.outEmail,
       outMobile: this.outMobile,
+      outRfc: this.outRfc,
+      outCurp: this.outCurp,
 
       outUsuarioBancaElectronica: this.outUsuarioBancaElectronica,
       outTenenciaProductos: this.outTenenciaProductos,
@@ -3510,7 +4332,6 @@ export class CaseEmbedded implements ComponentFramework.StandardControl<IInputs,
 
       outSegmento: this.outSegmento,
       outSucursal: this.outSucursal,
-      outSucursalAlta: this.outSucursalAlta,
       customerid: this.customerid,
     } as IOutputs;
   }

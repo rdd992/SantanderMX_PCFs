@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <manifest>
-  <control namespace="SampleNameSpace"
-           constructor="CaseEmbedded"
+  <control namespace="MovimientosCasoPCF"
+           constructor="MovimientosCasoPCF"
            version="1.0.2"
-           display-name-key="SampleComponent"
-           description-key="SampleComponent description"
+           display-name-key="MovimientosCasoPCF"
+           description-key="MovimientosCasoPCF description"
            control-type="standard"
            api-version="1.3.18">
 
@@ -48,6 +48,11 @@
               display-name-key="OutEmail_Display" description-key="OutEmail_Desc" />
     <property name="outMobile" of-type="SingleLine.Phone" usage="bound" required="false"
               display-name-key="OutMobile_Display" description-key="OutMobile_Desc" />
+    <property name="outRfc" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutRfc_Display" description-key="OutRfc_Desc" />
+    <property name="outCurp" of-type="SingleLine.Text" usage="bound" required="false"
+              display-name-key="OutCurp_Display" description-key="OutCurp_Desc" />
+
 
     <!-- NUEVOS BOOLEANS -->
     <property name="outUsuarioBancaElectronica" of-type="TwoOptions" usage="bound" required="false"
@@ -66,8 +71,8 @@
               display-name-key="OutSegmento_Display" description-key="OutSegmento_Desc" />
     <property name="outSucursal" of-type="Lookup.Simple" usage="bound" required="false"
               display-name-key="OutSucursal_Display" description-key="OutSucursal_Desc" />
-    <property name="outSucursalAlta" of-type="Lookup.Simple" usage="bound" required="false"
-              display-name-key="OutSucursalAlta_Display" description-key="OutSucursalAlta_Desc" />
+    <!-- <property name="outSucursalAlta" of-type="Lookup.Simple" usage="bound" required="false"
+              display-name-key="OutSucursalAlta_Display" description-key="OutSucursalAlta_Desc" /> -->
 
     <!-- CUSTOMER (account/contact) -->
     <property name="customerid" of-type="Lookup.Customer" usage="bound" required="false"

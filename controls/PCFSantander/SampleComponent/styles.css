@@ -228,42 +228,113 @@ fluent-combobox::part(control){
   width: 500px;
 }
 
-/* === NUEVO: fila para P1/P2 Movimiento con mismo layout que preguntas === */
-.mov-extra-row{
+/* ======================================================
+   ✅ FIX REAL: P1/P2 Movimiento con EXACTO layout Preguntas
+   (para fluent-combobox, sin “doble combobox”)
+   ====================================================== */
+.mov-extra-container{
   display:grid;
-  grid-template-columns: 220px minmax(0,1fr);
-  column-gap:10px;
-  align-items:center;
-  margin-top:10px;
+  grid-template-columns: repeat(4, 1fr);
+  column-gap:48px;
+  row-gap:0;
+  margin-left:70px;        /* igual que product-grid */
+  align-items:start;
+  justify-items:start;
+  margin-top:12px;         /* separación desde la tabla */
+  width:100%;
+  clear:both;
 }
 
-/* Ajustar márgenes de los labels/values dentro de mov-extra-row */
+.mov-extra-filler{
+  grid-column: 4;
+  width: 1px;
+  height: 1px;
+}
+
+/* El wrapper solo agrupa, pero sus hijos se posicionan directo en el grid */
+.mov-extra-row{ display: contents; }
+
+/* Labels/Values igual que tus preguntas */
 .mov-extra-row .question-label{
-  grid-column:auto;
-  margin-top:0;
+  grid-column: 1;
+  color: var(--muted);
+  font-weight: 600;
+  align-self: start;
+  margin-top: 30px;
+  text-align:left;
 }
 .mov-extra-row .question-value{
-  grid-column:auto;
-  margin-top:0;
-  margin-left:0;
+  grid-column: 2 / 4;
+  align-self: start;
+  margin-left: 10px;
+  margin-top: 22px;
+  width:100%;
 }
 
-/* === NUEVO: combos P1Movimiento / P2Movimiento, look igual a cbPregunta === */
-#mov-p1-select,
-#mov-p2-select{
-  height:34px;
+/* ✅ Estilo SOLO para los combobox de movimientos (Fluent) */
+fluent-combobox.mov-question-combobox::part(control){
+  background:#f5f5f5;
   border:1px solid #d6d6d6;
   border-radius:6px;
-  background:#f5f5f5;
-  padding:0 10px;
-  width:100%;
-  max-width:560px;
-  outline:none;
+  min-height:34px;
+  width: 500px;
 }
-#mov-p1-select:focus,
-#mov-p2-select:focus{
+
+/* Focus igual a cbPregunta */
+fluent-combobox.mov-question-combobox::part(control):focus-within{
   border-color:#b8b8b8;
   box-shadow:0 0 0 2px rgba(0,0,0,.05) inset;
+}
+
+/* ======================================================
+   ✅ FIX FINAL: eliminar “doble combobox” + igualar tipografía
+   (P1/P2 Movimiento)
+   ====================================================== */
+
+/* El HOST (fluent-combobox) NO debe dibujar borde/fondo propios */
+#mov-p1-select,
+#mov-p2-select{
+  display:block;
+  border:0 !important;
+  background:transparent !important;
+  padding:0 !important;
+  height:auto !important;
+  width:100%;
+  max-width:560px;
+  font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  font-size:14px;
+}
+
+/* El borde/fondo “real” va en el control interno */
+#mov-p1-select::part(control),
+#mov-p2-select::part(control){
+  background:#f5f5f5;
+  border:1px solid #d6d6d6;
+  border-radius:6px;
+  min-height:34px;
+  width: 500px;
+}
+
+/* Tipografía del texto seleccionado (como el original) */
+#mov-p1-select::part(selected-value),
+#mov-p2-select::part(selected-value){
+  font-family:inherit;
+  font-size:14px;
+  font-weight:400;
+  color:var(--ink);
+}
+
+/* Asegurar que la lista no quede “debajo” y parezca superposición */
+#mov-p1-select::part(listbox),
+#mov-p2-select::part(listbox){
+  z-index:9999;
+}
+
+/* En los extras, el value igual al original (flex + gap) */
+.mov-extra-container .question-value{
+  display:flex;
+  gap:10px;
+  align-items:center;
 }
 
 /* ===== Sección de acciones de contrato ===== */
@@ -317,6 +388,33 @@ fluent-combobox::part(control){
     column-gap:24px;
   }
   fluent-combobox::part(control){ width:100%; }
+
+  /* Movimientos extras responsivo */
+  .mov-extra-container{
+    grid-template-columns: repeat(2, 1fr);
+    column-gap:24px;
+    margin-left:0;
+  }
+  .mov-extra-row .question-value{
+    grid-column: 1 / -1;
+    margin-left:0;
+  }
+  .mov-extra-row .question-label{
+    margin-top:16px;
+  }
+  .mov-extra-row .question-value{
+    margin-top:10px;
+  }
+
+  fluent-combobox.mov-question-combobox::part(control){
+    width: 100%;
+  }
+
+  /* FIX FINAL responsive */
+  #mov-p1-select::part(control),
+  #mov-p2-select::part(control){
+    width:100%;
+  }
 }
 @media (max-width: 640px){
   .product-grid{ grid-template-columns: 1fr; }

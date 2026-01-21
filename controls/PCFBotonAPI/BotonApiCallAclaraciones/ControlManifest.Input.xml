@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control
+    namespace="BotonApiCallAclaraciones"
+    constructor="BotonApiCallAclaraciones"
+    version="0.0.1"
+    display-name-key="BotonApiCallAclaraciones"
+    description-key="BotonApiCallAclaraciones description"
+    control-type="standard" >
+
+    <!-- ✅ Llama a un endpoint externo (Power Platform environment endpoint) -->
+    <external-service-usage enabled="true">
+      <domain>224b058bd2304e15a2b940182c053c.42.environment.api.powerplatform.com</domain>
+    </external-service-usage>
+
+    <!-- Mantengo tu propiedad para recibir el JSON (buc/folio/fechas) desde Canvas -->
+    <property
+      name="parametrosEntrada"
+      display-name-key="parametrosEntrada"
+      description-key="parametrosEntrada"
+      of-type="SingleLine.Text"
+      usage="bound"
+      required="true" />
+
+    <resources>
+      <!-- Si tu proyecto compila con index.ts directo en debug/dev -->
+      <code path="index.ts" order="1" />
+      <!-- ✅ CSS -->
+      <css path="Styless.css" order="1" />
+
+      <!-- UNCOMMENT TO ADD MORE RESOURCES
+      <resx path="strings/BotonApiCallAclaraciones.1033.resx" version="1.0.0" />
+      -->
+    </resources>
+
+    <!--
+    <feature-usage>
+      <uses-feature name="WebAPI" required="true" />
+      <uses-feature name="Utility" required="true" />
+    </feature-usage>
+    -->
+  </control>
+</manifest>
